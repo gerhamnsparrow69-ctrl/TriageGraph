@@ -1,0 +1,89 @@
+11. SECURITY CONSIDERATIONS
+
+The brief asks for authentication, role-based authorisation, password protection, input
+validation, secure API access and protection against unauthorised operations. Each is covered
+below with where it lives in the code and the test that checks it.
+
+11.1 Authentication
+  - POST /api/v1/auth/login checks the email and password and returns a signed JSON Web Token
+    (HS256). The token carries the user id (subject) and role, and expires after 2 hours.
+  - The server keeps no session (stateless). Every request sends the token in the Authorization
+    header and Spring Security's OAuth2 resource server verifies the signature and expiry.
+  - The signing key comes from the JWT_SECRET environment variable (at least 32 random
+    characters), kept in .env, which is git-ignored. .env.example documents it without a value.
+  - Only login, registration, the API documentation and the health check are reachable without a
+    token. Everything else returns 401 (TC27).
+  Code: config/SecurityConfig, identity/application/AuthService and JwtService.
+
+11.2 Password protection
+  - Passwords are hashed with BCrypt (salted, slow by design). The hash is never returned by any
+    API and never logged.
+  - Policy: at least 8 characters with at least one letter and one digit (PasswordPolicy). A weak
+    password is rejected with a clear message (TC15).
+  - Brute force: 5 wrong passwords in a row lock the account for 5 minutes (HTTP 423 with the
+    unlock time). A correct password resets the counter (TC26).
+  - The login error is the same for an unknown email and a wrong password ("Invalid email or
+    password."), so the form cannot be used to find out which emails have accounts.
+
+11.3 Role-based authorisation
+  - Five roles: EMPLOYEE, TECHNICIAN, TEAM_LEAD, ADMIN, IT_MANAGER. The role is a claim in the
+    token and becomes a Spring authority (ROLE_ADMIN and so on).
+  - Controller methods are protected with @PreAuthorize. Examples: managing users needs ADMIN;
+    the delivery log needs ADMIN or IT_MANAGER; the Command Centre feed needs ADMIN, IT_MANAGER or
+    TEAM_LEAD. Any other role gets 403 (TC23).
+  - Self-registration always creates an EMPLOYEE. Technicians, team leads, administrators and the
+    IT manager can only be created by an administrator, so nobody can give themselves more rights.
+  - The frontend hides pages a role cannot use and shows a 403 page if a user types the address,
+    but this is only for convenience: the server checks every request.
+
+11.4 Protection against unauthorised operations (object level)
+  - A role check alone is not enough: an employee may read incidents, but only their own. Each
+    User subclass answers canView(incident) and canPerform(action, incident) for itself
+    (polymorphism), and the incident module asks before every read or action. A refusal raises
+    UnauthorizedOperationException (403). This stops a user reading or changing someone else's
+    incident by guessing its id (TC24, TC25).
+  - The same rule applies to notifications: marking a notification as read checks that it belongs
+    to the caller (tested in NotificationControllerTest).
+
+11.5 Input validation
+  - Every request body is a record with Jakarta Bean Validation annotations (@NotBlank, @Email,
+    @Size limits on every text field, enum binding for roles and priorities). Invalid input gets a
+    400 response listing each field and its problem (TC13).
+  - All database access goes through JPA with bound parameters; no SQL is built from strings, so
+    SQL injection is not possible through our queries.
+  - React escapes all text it renders, so user-entered descriptions cannot inject scripts.
+
+11.6 Secure API access
+  - CORS allows only the configured frontend origin (http://localhost:5173 in development).
+  - CSRF protection is off because the API uses bearer tokens, not cookies; a third-party site
+    cannot make the browser attach the token.
+  - Actuator exposes only health and info.
+  - Errors are returned as RFC 9457 ProblemDetail (status, title, detail, errorCode, timestamp,
+    path). Stack traces and internal messages are never sent to the client.
+
+11.7 Live stream (Server-Sent Events)
+  - The browser's EventSource cannot send an Authorization header. The client therefore asks for
+    a separate stream token (POST /auth/stream-token, valid for 5 minutes) and passes it as
+    ?access_token= on /api/v1/stream only. Every other endpoint ignores tokens in the URL and
+    still requires the header (tested in NotificationControllerTest).
+  - Trade-off: a URL can appear in server or proxy logs. The short lifetime limits the damage,
+    and the token is only accepted on the stream. In production the stream would sit behind HTTPS
+    and access logs would drop query strings.
+
+11.8 External services and data
+  - Email, push and AI calls run after the incident transaction commits and are retried, then
+    logged. A failure cannot change or roll back incident data.
+  - Push topics on the public ntfy.sh server act like passwords: anyone who knows a topic can read
+    it. Topics should be long and random, or a self-hosted ntfy server used.
+  - Before an incident description is sent to the Gemini API, personal data is masked, and the
+    external model can be switched off entirely for data-governance reasons.
+
+11.9 Known limitations and what we would add
+  - The application.yml has a development-only default JWT secret so the project starts without
+    setup. Production must set JWT_SECRET; we would make startup fail if it is missing outside the
+    dev profile.
+  - No refresh tokens: users log in again after 2 hours.
+  - No HTTPS in the local setup; production would terminate TLS at a reverse proxy.
+  - No rate limiting beyond the login lockout; an API gateway or Bucket4j would add it.
+  - Single-factor login; campus SSO (SAML or OpenID Connect) or a second factor would be the next
+    step.

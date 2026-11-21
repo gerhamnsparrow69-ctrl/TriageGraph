@@ -1,0 +1,97 @@
+4.1 USE CASE DIAGRAM
+
+Figure: docs/uml/use-case.png (source: docs/uml/use-case.puml, PlantUML).
+
+Actors
+  Employee              reports and follows incidents
+  Technician            works an assigned queue
+  Team lead             a Technician who can also reassign (generalisation: Team lead is-a
+                        Technician)
+  Administrator         configures and monitors the whole system
+  IT manager            oversight: Command Centre, reports, audit
+  Scheduler             the SLA monitor, a timer inside the system that acts on its own
+  Email server, Push service (ntfy), Gemini API
+                        external systems the system calls
+
+Relationships
+  Report incident <<include>> Get category and duplicate suggestions, Prioritise and auto-assign
+  Join existing incident <<extend>> Report incident (only when a likely duplicate is shown)
+  Detect SLA warning or breach <<include>> Escalate <<include>> Receive notifications
+
+
+4.2 MAIN USE CASES
+
+UC-02 Report incident
+  Actor           Employee
+  Precondition    Logged in as an Employee
+  Main flow       1. Employee opens "Report an issue" and types a title and description (or dictates
+                     with the microphone button).
+                  2. The system suggests a category and service and lists similar open incidents.
+                  3. Employee picks the affected service, impact and urgency and submits.
+                  4. The system creates the incident (NEW), classifies it, calculates priority, sets
+                     SLA deadlines and assigns a technician with the active strategy (ASSIGNED).
+                  5. The reporter and the assignee are notified (BR-N1). The Command Centre feed
+                     shows the new incident.
+  Alternatives    2a. A likely duplicate is shown and the Employee clicks Join: they become a
+                      follower of the existing incident and no new incident is created (UC-04).
+                  4a. No technician is eligible: the incident stays CLASSIFIED and the team lead is
+                      notified.
+  Exceptions      Invalid input (400 with the field errors); same text from the same reporter
+                  within 10 minutes (409 DuplicateIncidentException with a link).
+
+UC-08 Work assigned queue
+  Actor           Technician (or Team lead)
+  Precondition    An incident is assigned to the technician
+  Main flow       1. Technician opens the queue, sorted by urgency, and opens an incident.
+                  2. Acknowledges it (response SLA recorded), then starts work.
+                  3. Adds notes, looks at similar resolved incidents and the suggested resolution.
+                  4. Records the resolution and resolves. The reporter is notified.
+  Alternatives    3a. Needs more information: requests it (PENDING_INFO, SLA paused). The reporter
+                      answers and the incident returns to IN_PROGRESS.
+  Exceptions      Action not allowed in the current state (409 InvalidStateTransitionException);
+                  incident assigned to someone else (403 UnauthorizedOperationException).
+
+UC-07 Verify or reopen, give feedback
+  Actor           Employee
+  Main flow       Employee reads the resolution and verifies (VERIFIED), then the incident closes;
+                  the Employee rates the fix 1 to 5.
+  Alternatives    Employee reopens with a reason (back to IN_PROGRESS, assignee notified). With no
+                  answer for 72 hours the system verifies automatically.
+
+UC-19 Receive notifications
+  Actors          Any user; Email server; Push service
+  Main flow       1. A domain event happens (assigned, SLA breached, resolved ...).
+                  2. After the transaction commits, the dispatcher works out the recipients and,
+                     from the rule table, the channels for each.
+                  3. In-app: saved to the inbox and pushed live; the bell count goes up and a toast
+                     appears. Email: sent through SMTP. Push: posted to the user's ntfy topic.
+                  4. Every attempt is written to the delivery log.
+  Alternatives    A user without an email or push topic is skipped for that channel (SKIPPED).
+  Exceptions      A channel fails: retried 3 times with backoff, then logged FAILED. The incident
+                  is never affected.
+
+UC-22 Detect SLA warning or breach / UC-23 Escalate
+  Actor           Scheduler
+  Main flow       Every 15 s the monitor checks open incidents. At 75% of the time used it raises
+                  one warning; at 100% it records one violation and asks the escalation chain to
+                  act: assignee, then team lead, then system administrator, then IT manager. Each
+                  step notifies its target and is audited.
+
+UC-13 Manage users and technicians
+  Actor           Administrator
+  Main flow       Create a user of any role, edit name, department and push topic, deactivate or
+                  reactivate. For technicians: skills, experience, maximum workload, availability
+                  and team lead.
+  Exceptions      Email already used (409); weak password (400).
+
+UC-15 Monitor Command Centre
+  Actors          Administrator, IT manager
+  Main flow       Opens the Command Centre: headline numbers and a live feed of incident events
+                  (reported, assigned, priority changes, SLA warnings and breaches, escalations,
+                  major incidents) that updates without refreshing.
+
+UC-24 Send test notification
+  Actor           Administrator
+  Main flow       Chooses a user and sends a test. It goes out on every channel, appears in the
+                  user's bell straight away, shows in the live feed and is recorded in the
+                  delivery log.

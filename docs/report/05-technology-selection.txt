@@ -1,0 +1,220 @@
+5. TECHNOLOGY STACK AND SELECTION REPORT
+
+5.1 Technology stack
+
+  Layer              Technology (version)                          Used for
+  -----------------  --------------------------------------------  ------------------------------------
+  Language           Java 21 (LTS)                                 Backend and domain model
+  Backend framework  Spring Boot 4.1.3 (Spring Framework 7)        Web MVC, dependency injection,
+                                                                   transactions, scheduling, events
+  Persistence        Spring Data JPA, Hibernate 7.4                Object-relational mapping,
+                                                                   repositories
+  Database           PostgreSQL 17 (Docker); H2 2.4 in tests       Persistent storage
+  Security           Spring Security, OAuth2 Resource Server       JWT (HS256) authentication, method-
+                     (Nimbus JOSE), BCrypt                         level role checks, password hashing
+  Validation         Jakarta Bean Validation (Hibernate            Request DTO validation
+                     Validator)
+  API documentation  springdoc-openapi 3.1.1 (OpenAPI 3,           Live API docs; TypeScript types are
+                     Swagger UI)                                   generated from them
+  Embeddings         LangChain4j all-MiniLM-L6-v2 (ONNX,           Duplicate detection and similar
+                     in-process)                                   incidents, offline
+  Graph              JGraphT 1.5.3                                 Service dependency graph, blast
+                                                                   radius, root-cause ranking
+  LLM                Google Gemini API (REST)                      Optional classification and
+                                                                   resolution drafts, with a fallback
+  Email              Spring Mail (JavaMailSender) + Mailpit        Email notifications; Mailpit shows
+                                                                   them in a browser inbox
+  Push               ntfy (HTTP)                                   Phone push notifications
+  Real-time          Server-Sent Events (SseEmitter /              Live bell, toasts and the Command
+                     EventSource)                                  Centre feed
+  Frontend           React 19, TypeScript 5.9, Vite 8              Single-page application
+  Styling            Tailwind CSS 4                                Three role-specific layouts,
+                                                                   responsive
+  Data fetching      TanStack Query 5, React Router 8              Server state and caching; routing
+  Charts and graph   Recharts 3, Cytoscape.js 3                    Reports; dependency graph view
+  Voice              Web Speech API (browser)                      Dictating incident descriptions
+  Testing            JUnit 5, Mockito, AssertJ, Spring Boot Test,  Unit, integration and architecture
+                     MockMvc, Awaitility, ArchUnit 1.5, JaCoCo     tests; coverage
+  Build and CI       Maven (wrapper), npm, GitHub Actions          Build and test on every push
+  Local environment  Docker Compose                                PostgreSQL and Mailpit with one
+                                                                   command
+  Lint               oxlint                                        Frontend static checks
+
+
+5.2 Answers to the nine questions in the brief
+
+Q1. Why did you choose this programming language?
+
+Java 21 is the language of the course, and its newer features let us show object-oriented design
+clearly rather than describe it:
+  - records give immutable value objects and DTOs in one line (FeedItem, NotificationTrigger,
+    IncidentSnapshot), with validation in the constructor;
+  - sealed interfaces close a hierarchy, so the compiler knows every DomainEvent, and a pattern-
+    matching switch over them (RecipientResolver, LiveFeed) fails to compile if a new event is
+    added and not handled;
+  - abstract classes and interfaces map directly onto the patterns we use (State, Strategy,
+    Template Method, Decorator).
+Java is statically typed, so a contract change between modules shows up as a compile error for
+every member at once, which matters for a team of four working in parallel. It is also the most
+common language for enterprise service-management systems, so the libraries we needed (security,
+ORM, mail, graph algorithms, embeddings) are mature.
+
+Q2. Why did you choose this frontend technology?
+
+React with TypeScript, built with Vite.
+  - Three different interfaces (Employee, Technician, Administrator) share one login and many
+    components. React's component model lets each role have its own layout while reusing the
+    bell, user menu, toasts and pages.
+  - TypeScript types are generated from the backend's OpenAPI description, so a renamed field
+    on the server is a compile error in the browser code rather than a runtime surprise.
+  - TanStack Query handles caching and refetching. When a live event arrives we only invalidate
+    the affected query, and the bell count refreshes itself.
+  - Tailwind CSS made the three colour themes and phone-width layouts quick to build consistently.
+  - EventSource (SSE) and the Web Speech API are built into the browser, so live updates and voice
+    input need no extra libraries.
+
+Q3. Why did you choose this backend technology?
+
+Spring Boot 4.1.
+  - Dependency injection is the Dependency Inversion Principle in practice: services depend on
+    interfaces (NotificationChannel, ChannelSelectionPolicy, UserDirectory) and Spring supplies
+    the implementations. Swapping an implementation is a configuration change, not a code change.
+  - The pieces an ITSM system needs are built in and well documented: Spring Security for JWT and
+    role checks, Spring Data JPA for persistence, @Scheduled for the SLA monitor, the application
+    event bus for the Observer pattern, and @Async for side effects.
+  - @TransactionalEventListener lets us choose when listeners run. Audit runs inside the incident's
+    transaction, so an incident change and its audit entry are saved together or not at all.
+    Notifications run after commit and asynchronously, so a failed email can never undo an
+    incident change.
+  - Boot 4.1 is the current supported line; the older 3.5 line left open-source support in
+    June 2026.
+
+Q4. Why did you select this database?
+
+PostgreSQL 17.
+  - The data is relational: incidents reference reporters, technicians, services and categories;
+    audit entries reference incidents; technicians reference team leads. Foreign keys keep these
+    consistent.
+  - Multi-row transactions are needed to keep the incident and its audit trail atomic.
+  - It supports everything the search needs (indexed filters on status, priority, dates, service)
+    and has a clear scaling path (read replicas, and pgvector for similarity search).
+  - It runs in Docker with one command. For tests we use H2 in PostgreSQL mode, so the whole suite
+    runs anywhere without Docker.
+
+Q5. Why did you choose this architecture?
+
+A modular monolith with a layered structure inside each module.
+  - One deployable application, split into modules (identity, incident, priority, triage,
+    assignment, catalog, topology, sla, escalation, notification, audit, reporting). Each module
+    has the same four layers: api (controllers, DTOs), application (use-case services), domain
+    (entities, interfaces, rules) and infrastructure (repositories, adapters to external systems).
+  - Modules talk to each other only through a shared contracts package (ports, DTO records,
+    domain events). This let four people build in parallel: each wrote against the contract and
+    a stub until the real module existed. For example, the notification module was built and tested
+    before the incident module, using a fake IncidentQueryPort.
+  - Side effects are driven by domain events (Observer), so adding a reaction to "incident
+    assigned" means adding a listener, not editing the incident code.
+  - Every external system (SMTP, ntfy, Gemini, the embedding model, the graph library) is behind
+    an interface in the infrastructure layer, with a fallback, so a failure outside our control
+    never stops the core workflow.
+  - Architecture rules (domain does not depend on infrastructure, no cycles between modules) are
+    checked by ArchUnit tests, so the structure is enforced, not just drawn.
+A monolith is the right size for a four-person team and one deployment, while the module
+boundaries are the same ones we would use to split into services later (see Q9).
+
+Q6. What alternatives did you consider?
+
+  Alternative            Why we did not choose it
+  ---------------------  ---------------------------------------------------------------------
+  Node.js / NestJS       Structural typing makes interfaces and inheritance less explicit, which
+                         is weaker for an OOP course.
+  Python / FastAPI or    Duck typing makes it harder to show and enforce object-oriented
+  Django                 contracts; fewer compile-time guarantees across a team.
+  .NET                   Comparable to Spring, but the team and the course use Java.
+  MongoDB                No foreign keys and weaker multi-document transactions; our data is
+                         relational.
+  MySQL                  Would work. PostgreSQL has better JSON support, richer indexing and the
+                         pgvector extension for the scaling path.
+  WebSockets             Two-way communication is not needed; the server only pushes. SSE is
+                         simpler, works through proxies and reconnects automatically.
+  Polling for updates    Wasteful, and the bell would lag by the polling interval.
+  Angular or Vue         Both would work; React has the widest library support for the charts
+                         and graph view we needed.
+  Microservices          Too much operational overhead for a four-person team and one weekend
+                         of integration. The modular monolith keeps the same boundaries.
+  External vector DB or  An in-memory index behind a VectorIndex interface is enough for
+  pgvector now           thousands of open incidents; switching is one new class.
+  Firebase Cloud         Needs a mobile app and Google project setup; ntfy makes a phone
+  Messaging              notify with one HTTP POST.
+
+Q7. What are the advantages and limitations of your technology stack?
+
+Advantages
+  - Strong typing end to end: Java on the server, TypeScript generated from the API on the
+    client.
+  - Clear OOP structure enforced by the compiler (sealed types, interfaces) and by ArchUnit.
+  - Resilient: email, push and AI failures are retried, logged and never break an incident.
+  - Works offline for the core features: the embedding model runs inside the JVM; Gemini is
+    optional and has a rule-based fallback.
+  - Testable: an injected Clock and interfaces for every external system make tests
+    deterministic; the full suite runs on H2 without Docker.
+  - Live interface without polling (SSE).
+  - Easy to run: Docker Compose for the database and mail server, Maven and npm wrappers.
+
+Limitations
+  - The JVM uses more memory and starts more slowly than a Node or Go service.
+  - The in-memory vector index and live connections are held by one process, so running several
+    instances needs the changes in Q9.
+  - The embedding model is English-centric; descriptions in other languages match less well.
+  - SSE cannot send an Authorization header, so the stream accepts a short-lived token in the
+    URL (see Security considerations).
+  - Voice input depends on the browser: Chrome, Edge and Safari support it; Firefox does not,
+    so the microphone button is hidden there.
+  - ntfy.sh is a public service; topics must be hard to guess, or a self-hosted ntfy server used.
+
+Q8. How does your technology support object-oriented design?
+
+  - Encapsulation: entities expose behaviour, not setters. Notification.markRead(time),
+    User.recordFailedLogin(time) and Incident state changes go through methods that enforce
+    the rules. Records make value objects immutable.
+  - Inheritance: User is abstract, with Employee, Technician, TeamLead, Administrator and
+    ItManager. JPA maps the hierarchy to the database (single-table inheritance).
+    AbstractNotificationChannel is the base for the in-app, email and push channels.
+  - Polymorphism: user.canView(incident) and canPerform(action, incident) differ per role;
+    channel.send(...) differs per channel; each IncidentState subclass allows different actions.
+  - Abstraction: modules depend on interfaces such as NotificationChannel, NtfyGateway,
+    LivePush, UserDirectory and IncidentQueryPort, never on concrete classes from another module.
+  - Design patterns, supported directly by the language and framework:
+      Factory        NotificationChannelFactory, UserFactory
+      Strategy       ChannelSelectionPolicy (rule table), AssignmentStrategy, PriorityCalculator
+      Decorator      RetryingNotificationChannel wraps any channel with retry and backoff
+      Template Method AbstractNotificationChannel.send() fixes the error handling; subclasses
+                     implement deliver()
+      Observer       NotificationDispatcher and LiveFeed listen for domain events
+      State          IncidentState subclasses for the ten statuses
+      Repository     domain-level repository interfaces with JPA implementations
+      Adapter        HttpNtfyGateway, the Gemini and embedding adapters
+  - SOLID: Spring's dependency injection gives Dependency Inversion; adding a notification channel
+    is one new class plus a rule row (Open/Closed); the notification log repository only allows
+    appending (Interface Segregation).
+
+Q9. How would your system evolve if the number of users increased significantly?
+
+  1. Run several backend instances behind a load balancer. Authentication is a stateless JWT, so
+     any instance can serve any request.
+  2. Move live updates to a shared broker. Today SseHub holds connections in memory; with several
+     instances, events would be published to Redis pub/sub (or similar) and each instance would
+     forward them to its own connected browsers. The LivePush interface means only one class
+     changes.
+  3. Move domain events from the in-process event bus to a message broker (Kafka or RabbitMQ), so
+     notifications, audit, correlation and reporting can scale and retry independently.
+  4. Give the SLA monitor a single leader (for example a ShedLock database lock) so only one
+     instance raises each warning, with an index on the next deadline.
+  5. Replace the in-memory vector index with pgvector (HNSW index) behind the existing VectorIndex
+     interface.
+  6. Read reports from a database replica and cache the Command Centre numbers.
+  7. Split modules into services along the boundaries that already exist (identity, notification
+     and reporting are the easiest), each with its own database, once team size or load justifies
+     the operational cost.
+  8. Use a managed email service and a self-hosted push server instead of Mailpit and the public
+     ntfy.sh.

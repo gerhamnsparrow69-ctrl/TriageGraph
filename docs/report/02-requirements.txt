@@ -1,0 +1,180 @@
+2. REQUIREMENTS SPECIFICATION
+
+2.1 User roles
+
+The brief asks for at least three categories of user. TriageGraph has five, because a campus IT
+department has team leads and an IT manager as well as technicians and administrators.
+
+  Role            Who                                   Main goals
+  --------------  ------------------------------------  ---------------------------------------------
+  Employee        Students, faculty and staff           Report a problem, follow it, answer questions,
+                                                        confirm the fix, give feedback
+  Technician      Support engineers                     Work an assigned queue: acknowledge,
+                                                        investigate, note, resolve
+  Team lead       Senior technician in charge of a      Everything a technician can do, plus see the
+                  team                                  team's queue and reassign; first escalation
+                                                        target
+  Administrator   System administrators                 Manage users, technicians, services,
+                                                        categories, SLA policies and strategies;
+                                                        monitor everything
+  IT manager      Head of the IT department             Read-only oversight: Command Centre, reports,
+                                                        audit; final escalation target
+
+Self-registration always creates an Employee. Every other account is created by an Administrator.
+
+
+2.2 Functional requirements
+
+Accounts and access
+  FR-01  A visitor can register as an Employee with name, email, department and password.
+  FR-02  A user can log in with email and password and receives a session token valid for 2 hours.
+  FR-03  After 5 wrong passwords in a row the account is locked for 5 minutes.
+  FR-04  Each role sees its own interface: Employee (blue top bar), Technician and Team lead (teal
+         sidebar), Administrator and IT manager (dark indigo sidebar).
+  FR-05  An Administrator can create, edit, deactivate and reactivate users of any role.
+  FR-06  An Administrator can set a technician's skills, experience, maximum workload, availability
+         and team lead.
+
+Incident reporting and lifecycle
+  FR-07  An Employee can report an incident with title, description, affected service, impact and
+         urgency. Voice dictation is offered where the browser supports it.
+  FR-08  Each incident gets a readable code (INC-1024), the reporter, category, service, impact,
+         urgency, priority, creation time, status, assignee, SLA deadlines, notes, resolution and
+         closure information.
+  FR-09  An incident moves through ten states: NEW, CLASSIFIED, ASSIGNED, ACKNOWLEDGED, IN_PROGRESS,
+         PENDING_INFO, RESOLVED, VERIFIED, CLOSED and MERGED. Only the transitions in BR-L1 to BR-L8
+         are allowed, and the UI only shows buttons for allowed actions.
+  FR-10  The Employee can view their incidents, follow the status, add information, answer a
+         technician's question, see the resolution, verify or reopen, and rate the fix from 1 to 5.
+  FR-11  A Technician can view assigned incidents, acknowledge, start work, add internal or public
+         notes, request information from the reporter, record resolution details and resolve.
+  FR-12  A Technician can see their current workload against their maximum.
+
+Classification, priority and assignment
+  FR-13  Incidents are classified into data-driven categories (Hardware, Software, Network, Database,
+         Cloud, Security, Authentication, Application, Storage and any added later). A new category is
+         a new data row, not a code change.
+  FR-14  Priority P1 to P4 is calculated from impact, urgency, the service's business criticality,
+         the number of affected users and the service's blast radius in the dependency graph.
+  FR-15  The system assigns a technician automatically with the active strategy. Four strategies
+         exist (skill based, load balanced, round robin, smart score) and an Administrator can switch
+         between them at run time.
+
+SLA, escalation and notification
+  FR-16  Response and resolution deadlines come from the SLA policy for the service and priority,
+         falling back to the default policy.
+  FR-17  The system warns at 75% of the time used, records a violation at 100%, and pauses the clock
+         while waiting on the reporter.
+  FR-18  An unacknowledged incident escalates through four levels: assignee, team lead, system
+         administrator, IT manager.
+  FR-19  Users are notified of events that concern them through three channels: in-app (live bell
+         and inbox), email, and phone push. Which channels are used depends on the event, the
+         recipient's role and the priority (see BR-N1).
+  FR-20  A user can list their notifications, see the unread count, and mark one or all as read.
+  FR-21  An Administrator can send a test notification to any user on every channel and read the
+         delivery log (sent, failed or skipped, with the error).
+
+Intelligence
+  FR-22  While an Employee types, the system suggests a category and service and warns about likely
+         duplicates. The Employee can join an existing incident instead of opening a new one.
+  FR-23  A Technician can merge a duplicate into its parent.
+  FR-24  Technicians see the most similar resolved incidents and a suggested resolution.
+  FR-25  When several services fail together, the dependency graph is used to rank probable root
+         causes and a Major Incident can be declared over the related incidents.
+
+Audit, search and reporting
+  FR-26  Every change to an incident is written to a tamper-evident audit trail (action, incident,
+         previous state, new state, description, actor, time). An Administrator can verify the chain.
+  FR-27  Incidents can be searched and filtered by code, date range, status, priority, category,
+         service, technician, SLA status, reporter, major incident and free text. Results are paged
+         and limited to what the user is allowed to see.
+  FR-28  Administrators and the IT manager can view six reports (incident overview, technician
+         workload, service analysis, trend, SLA compliance by priority, AI effectiveness) and export
+         them as CSV.
+  FR-29  The Command Centre shows headline numbers and a live feed of incident events as they
+         happen.
+
+
+2.3 Non-functional requirements
+
+  NFR-01 Performance     Pages load in under 2 s on a laptop with the demo data. Triage suggestions
+                         appear in under 1 s. Live notifications reach the browser within 1 s of
+                         the event.
+  NFR-02 Reliability     A failure in email, push or the AI service never fails or rolls back an
+                         incident action. Notification sends are retried 3 times with backoff and
+                         then logged as failed.
+  NFR-03 Security        See section 11 (Security considerations).
+  NFR-04 Usability       Each role has a distinct layout. Errors are shown as readable messages,
+                         never stack traces. Every page works at phone width.
+  NFR-05 Maintainability Modules talk only through shared contracts or domain events. Every
+                         variation point (state, priority calculator, assignment strategy,
+                         notification channel, escalation level) is an interface, so a new variant
+                         is one new class.
+  NFR-06 Testability     Time comes from an injected Clock and external systems sit behind
+                         interfaces, so tests are deterministic and run without Docker.
+  NFR-07 Scalability     Stateless authentication and module boundaries allow horizontal scaling
+                         and a later split into services (see Technology selection, Q9).
+  NFR-08 Portability     One command starts the database and mail server (Docker Compose). The
+                         backend runs on any machine with Java 21.
+
+
+2.4 Business rules
+
+Lifecycle
+  BR-L1  NEW can be classified (to CLASSIFIED) or merged into another incident (to MERGED).
+  BR-L2  CLASSIFIED can be assigned (to ASSIGNED) or merged.
+  BR-L3  ASSIGNED can be acknowledged by the assignee only, or reassigned by a team lead or admin.
+  BR-L4  ACKNOWLEDGED can be started (to IN_PROGRESS) by the assignee, or reassigned.
+  BR-L5  IN_PROGRESS can ask the reporter for information (to PENDING_INFO) or be resolved.
+  BR-L6  PENDING_INFO returns to IN_PROGRESS when the reporter replies.
+  BR-L7  RESOLVED can be verified by the reporter (to VERIFIED) or reopened with a reason. It is
+         verified automatically after 72 hours.
+  BR-L8  VERIFIED can be closed. CLOSED and MERGED are final; only feedback on a CLOSED incident is
+         allowed afterwards. Any other action raises InvalidStateTransitionException.
+
+Priority
+  BR-P1  score = impact x urgency x criticality x affected-users multiplier x blast-radius multiplier.
+         P1 if score >= 40, P2 if >= 20, P3 if >= 8, otherwise P4.
+  BR-P2  A Security incident with impact 3 or more is at least P2. A Major Incident is always P1.
+  BR-P3  Joining a duplicate adds one affected user and recalculates priority.
+
+SLA
+  BR-S1  Default targets (response / resolution): P1 5 min / 30 min, P2 15 min / 2 h,
+         P3 1 h / 8 h, P4 4 h / 24 h. A service-specific policy overrides the default.
+  BR-S2  Targets are copied into the incident when it is created; later policy changes do not move
+         deadlines on open incidents.
+  BR-S3  The resolution clock pauses in PENDING_INFO and RESOLVED; the paused time is added to the
+         deadline.
+  BR-S4  Each warning and each breach is raised once per incident and kind.
+
+Assignment
+  BR-A1  Only active, available technicians below their maximum workload are eligible.
+  BR-A2  If skilled technicians exist but all are full, WorkloadExceededException; if nobody has the
+         skill, TechnicianUnavailableException. The incident stays CLASSIFIED and the team lead is told.
+
+Duplicates
+  BR-D1  Combined similarity 0.75 or more is "likely duplicate"; 0.60 to 0.75 is "possibly related".
+  BR-D2  The same reporter submitting near-identical text (similarity 0.95 or more) within 10
+         minutes is rejected with a link to the existing incident.
+
+Notification
+  BR-N1  Channels by event (recipient: channels):
+           Reported                 reporter: in-app, email
+           Assigned / reassigned    assignee: in-app, push, plus email if P1; reporter: in-app
+           Priority changed         assignee, reporter: in-app
+           Information requested    reporter: in-app, email
+           SLA warning              assignee: in-app, push
+           SLA breached             assignee and team lead: in-app, push, email
+           Escalated                escalation target: in-app, push, email
+           Resolved                 reporter and followers: in-app, email
+           Closed                   reporter: in-app
+           Major incident declared  IT manager, admins, team leads: push, email;
+                                    affected reporters: in-app
+  BR-N2  A user without an email address or push topic is skipped for that channel and the skip is
+         logged. A failed send never affects the incident.
+
+Accounts
+  BR-U1  Passwords are at least 8 characters with at least one letter and one digit.
+  BR-U2  Email addresses are unique.
+  BR-U3  Five wrong passwords in a row lock the account for 5 minutes. The error never says whether
+         the email or the password was wrong.

@@ -1,0 +1,19 @@
+9. PROJECT DEMONSTRATION
+
+Video: <add the link after upload>
+File name: <GroupNo>_OOP_S1_2025-2026_Project
+Length: 15 to 20 minutes. Every member introduces themselves and explains their modules.
+
+Workflows shown
+  W1  Employee reports an incident -> system suggests category and service, warns about a
+      duplicate, calculates priority -> technician assigned -> reporter and technician notified
+      (bell updates live, email in Mailpit, push on a phone).
+  W2  Technician acknowledges and investigates -> SLA monitored, warning and breach, escalation to
+      the team lead -> incident resolved -> reporter notified, verifies and gives feedback.
+  W3  Several services fail together -> duplicates joined and related incidents correlated on the
+      dependency graph -> probable root cause found -> major incident declared, and resolving it
+      resolves every linked incident.
+
+Also shown: the three role interfaces, login lockout, a 403 for a wrong role, adding a category
+and switching the assignment strategy without a restart, the Command Centre live feed, the test
+notification and delivery log, and the test suite passing.
