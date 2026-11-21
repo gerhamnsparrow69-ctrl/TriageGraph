@@ -17,7 +17,7 @@ Legend: ✅ passed · ⏳ waiting for the owner's module · 🔁 run on the team
 | TC03 | Normal | assignment (M2) | `SKILL_BASED` with 3 technicians, only one skilled; tie between equally skilled | skilled technician chosen; tie goes to lower load | `SkillBasedStrategyTest.chooseTheOnlySkilledTechnician`, `…tieBetweenEquallySkilledGoesToLowerLoad` | ✅ |
 | TC04 | Normal | assignment (M2) | `ROUND_ROBIN`, 3 eligible, 4 assignments | order A, B, C, A | `RoundRobinStrategyTest.fourAssignmentsCycleThroughThreeTechnicians` | ✅ |
 | TC05 | Normal | incident/audit (M1) | Full lifecycle NEW → CLOSED | ≥ 9 ordered audit entries with correct from/to states | *M1 to add* | ⏳ |
-| TC06 | Normal | notification (M4) | `IncidentAssigned` for a P1 | in-app row; one Mailpit email; push gateway called once | *M4 to add* | ⏳ |
+| TC06 | Normal | notification (M4) | `IncidentAssigned` for a P1 | in-app row; one Mailpit email; push gateway called once | `NotificationFlowTest.p1AssignmentReachesTheTechnicianOnAllThreeChannels` | ✅ |
 | TC07 | Boundary | priority (M1) | score exactly 40.0 vs 39.9 | P1 vs P2 | *M1 to add* | ⏳ |
 | TC08 | Boundary | priority (M1) | affected users 9/10, 49/50, 199/200 | multipliers change at each boundary | *M1 to add* | ⏳ |
 | TC09 | Boundary | sla (M3) | elapsed 74.9 % vs exactly 75 % | ON_TRACK vs AT_RISK; warning raised once | *M3 to add* | ⏳ |
@@ -31,7 +31,7 @@ Legend: ✅ passed · ⏳ waiting for the owner's module · 🔁 run on the team
 | TC17 | Exception | incident (M1) | resolve() while ASSIGNED | 409; no audit entry for the rejected action | *M1 to add* | ⏳ |
 | TC18 | Exception | sla (M3) | no service policy and no default for P2 | `SlaConfigurationMissingException`; admin alerted | *M3 to add* | ⏳ |
 | TC19 | Exception | triage (M2) | Gemini fails (HTTP 429, timeout, invalid JSON, or no network) | adapter raises `LlmUnavailableException`; circuit opens after 3 failures; classification still answers from the local classifiers (source ≠ LLM) | `GeminiLlmClientTest.httpErrorsAndInvalidAnswersBecomeLlmUnavailable`, `LlmDecoratorsTest.circuitOpensAfterRepeatedFailuresAndClosesAfterASuccessfulTrial`, `TriageServiceImplTest.geminiFailureFallsBackToLocalClassifiers` | ✅ |
-| TC20 | Exception | notification (M4) | SMTP down | 3 retries; log status FAILED; incident flow unaffected | *M4 to add* | ⏳ |
+| TC20 | Exception | notification (M4) | SMTP down | 3 retries; log status FAILED; incident flow unaffected | `NotificationFlowTest.smtpOutageIsRetriedLoggedAndContained`, `RetryingNotificationChannelTest.givesUpAfterThreeAttempts` | ✅ |
 | TC21 | Exception | topology (M3) | dependency that creates a cycle | 422 `CyclicDependencyException`; graph unchanged | *M3 to add* | ⏳ |
 | TC22 | Exception | triage (M2) | Same reporter sends near-identical text within 10 minutes | 409 `DUPLICATE_INCIDENT` naming the existing ticket; another reporter or an older report passes | `RepeatSubmissionGuardTest.sameReporterResubmittingWithinTheWindowIsRejected`, `…otherReportersOlderReportsAndDifferentTextArePassed`, `TriageServiceImplTest.sameReporterSendingTheSameTextAgainIsBlocked` | ✅ |
 | TC23 | Authorisation | identity (M4), triage + assignment (M2) | Employee calls admin endpoints | 403 | `AuthControllerTest.employeeCannotUseAdminEndpoints`; `TriageApiIntegrationTest.employeeCannotChangeTriageSettings`; `AssignmentApiIntegrationTest.unknownStrategyIsBadInputAndOnlyAdminsMaySwitch` | 🔁 |
