@@ -1,6 +1,7 @@
 import type { RouteObject } from 'react-router'
 import { authRoutes } from '../features/auth/routes'
 import { notificationRoutes } from '../features/notifications/routes'
+import { usersAdminRoutes } from '../features/users/routes'
 
 /**
  * Feature route registry (blueprint §22, rule 3). Each feature exports arrays from
@@ -26,4 +27,5 @@ export const technicianRoutes: RouteObject[] = [
 /** Pages inside the indigo admin layout, under /admin. */
 export const adminRoutes: RouteObject[] = [
   ...notificationRoutes,
+  ...usersAdminRoutes,
 ]

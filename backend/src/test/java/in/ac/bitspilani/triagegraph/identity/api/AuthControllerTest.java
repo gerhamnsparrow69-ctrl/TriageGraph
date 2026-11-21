@@ -146,6 +146,26 @@ class AuthControllerTest {
                 .andExpect(jsonPath("$.technician.teamLeadName").value("Ananya Iyer"));
     }
 
+    @Test
+    void adminCanDeactivateOthersButNotThemselves() throws Exception {
+        String adminEmail = uniqueEmail();
+        long adminId = admin.create(new NewUser(Role.ADMIN, "Vikram Singh", adminEmail, PASSWORD, null, Set.of(), 0, 0))
+                .getId();
+        String userEmail = uniqueEmail();
+        long userId = admin.create(NewUser.employee("Dev Sharma", userEmail, PASSWORD, null)).getId();
+        String token = token(adminEmail, PASSWORD);
+
+        mvc.perform(post("/api/v1/admin/users/" + adminId + "/deactivate").header("Authorization", "Bearer " + token))
+                .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/v1/admin/users/" + userId + "/deactivate").header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.active").value(false));
+        login(userEmail, PASSWORD).andExpect(status().isUnauthorized());
+        mvc.perform(post("/api/v1/admin/users/" + userId + "/activate").header("Authorization", "Bearer " + token))
+                .andExpect(jsonPath("$.active").value(true));
+        login(userEmail, PASSWORD).andExpect(status().isOk());
+    }
+
     /** Regression: the team lead must be loaded when a technician logs in (open-in-view is off). */
     @Test
     void technicianWithATeamLeadCanLogIn() throws Exception {

@@ -5,6 +5,8 @@ import java.util.Set;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,6 +22,7 @@ import in.ac.bitspilani.triagegraph.identity.api.AuthDtos.UpdateUserRequest;
 import in.ac.bitspilani.triagegraph.identity.api.AuthDtos.UserResponse;
 import in.ac.bitspilani.triagegraph.identity.application.NewUser;
 import in.ac.bitspilani.triagegraph.identity.application.UserAdminService;
+import in.ac.bitspilani.triagegraph.shared.exception.InvalidInputException;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 
@@ -57,7 +60,10 @@ public class AdminUserController {
 
     @PostMapping("/users/{id}/deactivate")
     @PreAuthorize("hasRole('ADMIN')")
-    public UserResponse deactivate(@PathVariable long id) {
+    public UserResponse deactivate(@AuthenticationPrincipal Jwt jwt, @PathVariable long id) {
+        if (CurrentUser.id(jwt) == id) {
+            throw new InvalidInputException("You can't deactivate your own account.");
+        }
         return UserResponse.from(admin.setActive(id, false));
     }
 
