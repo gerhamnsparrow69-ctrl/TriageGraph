@@ -1,12 +1,25 @@
 import type { RouteObject } from 'react-router'
+import { authRoutes } from '../features/auth/routes'
 
 /**
- * Each feature exports its own `routes` array from `src/features/<feature>/routes.tsx`
- * and adds one import + one spread line here. Nobody edits anyone else's lines (blueprint §22, rule 3).
+ * Feature route registry (blueprint §22, rule 3). Each feature exports arrays from
+ * src/features/<feature>/routes.tsx and adds ONE spread line to the list it belongs in.
+ * Paths inside a layout list are relative to that layout (e.g. 'reports' → /admin/reports).
  */
-export const featureRoutes: RouteObject[] = [
-  // ...authRoutes,        (M4)
-  // ...incidentRoutes,    (M1)
-  // ...triageRoutes,      (M2)
-  // ...topologyRoutes,    (M3)
+
+/** Pages outside any layout (login, register). */
+export const publicRoutes: RouteObject[] = [
+  ...authRoutes,
+]
+
+/** Pages inside the blue employee layout, under /employee. */
+export const employeeRoutes: RouteObject[] = [
+]
+
+/** Pages inside the teal technician layout, under /technician. */
+export const technicianRoutes: RouteObject[] = [
+]
+
+/** Pages inside the indigo admin layout, under /admin. */
+export const adminRoutes: RouteObject[] = [
 ]

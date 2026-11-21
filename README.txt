@@ -23,6 +23,18 @@ cd frontend && npm ci && npm run dev      # UI on http://localhost:5173
 
 Profiles: `dev` (default, PostgreSQL), `test` (H2 in memory, used by the test suite), `demo` (dev plus demo seed data).
 
+## Demo accounts (dev and demo profiles)
+
+Every seeded account uses the password `Demo@1234`.
+
+| Role | Email |
+|---|---|
+| Employee | `dev.sharma@triagegraph.local` |
+| Technician | `sneha.reddy@triagegraph.local` |
+| Team lead | `ananya.iyer@triagegraph.local` |
+| Administrator | `vikram.singh@triagegraph.local` |
+| IT manager | `meera.joshi@triagegraph.local` |
+
 ## Tests
 
 ```bash
