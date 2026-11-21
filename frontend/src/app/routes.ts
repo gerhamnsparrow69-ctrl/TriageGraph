@@ -4,6 +4,8 @@ import { authRoutes } from '../features/auth/routes'
 import { incidentRoutes } from '../features/incident/routes'
 import { notificationRoutes } from '../features/notifications/routes'
 import { usersAdminRoutes } from '../features/users/routes'
+import { reportsAdminRoutes } from '../features/reports/routes'
+import { searchAdminRoutes, searchTechnicianRoutes } from '../features/search/routes'
 
 /**
  * Feature route registry (blueprint §22, rule 3). Each feature exports arrays from
@@ -26,6 +28,7 @@ export const employeeRoutes: RouteObject[] = [
 export const technicianRoutes: RouteObject[] = [
   ...notificationRoutes,
   ...incidentRoutes,
+  ...searchTechnicianRoutes,
 ]
 
 /** Pages inside the indigo admin layout, under /admin. */
@@ -34,4 +37,6 @@ export const adminRoutes: RouteObject[] = [
   ...usersAdminRoutes,
   ...incidentRoutes,
   ...auditAdminRoutes,
+  ...searchAdminRoutes,
+  ...reportsAdminRoutes,
 ]

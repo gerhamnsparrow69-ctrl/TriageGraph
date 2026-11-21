@@ -23,7 +23,7 @@ function Row({ item }: { item: FeedItem }) {
   return (
     <li className="flex items-start gap-3 px-4 py-2.5">
       <time className="text-xs tabular-nums text-slate-400 pt-0.5 w-[5.5rem] shrink-0 whitespace-nowrap" dateTime={item.at}>
-        {new Date(item.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+        {new Date(item.at).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' })}
       </time>
       <span className={`text-[11px] font-medium uppercase tracking-wide rounded px-1.5 py-0.5 shrink-0 ${tone[item.type] ?? tone.STATUS}`}>
         {label(item.type)}
