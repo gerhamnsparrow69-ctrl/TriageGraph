@@ -41,7 +41,7 @@ app:
   # --- Member 4: security ---
   security:
     jwt-secret: ${JWT_SECRET:dev-only-secret-change-me-0123456789abcdef}
-    jwt-ttl: 8h
+    jwt-ttl: 2h
     allowed-origins:
       - http://localhost:5173
   # --- Member 4: notifications ---
