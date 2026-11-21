@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router'
-import { useAuth } from '../../features/auth/AuthContext'
+import { homeFor, useAuth } from '../../features/auth/AuthContext'
+import { NotificationBell } from '../../features/notifications/NotificationBell'
 
 const roleLabel: Record<string, string> = {
   EMPLOYEE: 'Employee',
@@ -15,6 +16,7 @@ export function UserMenu({ className = '' }: { className?: string }) {
   if (!user) return null
   return (
     <div className={`flex items-center gap-3 text-sm ${className}`}>
+      <NotificationBell to={`${homeFor(user.role)}/notifications`} />
       <div className="text-right leading-tight hidden sm:block">
         <div className="font-medium">{user.name}</div>
         <div className="opacity-70 text-xs">{roleLabel[user.role ?? ''] ?? user.role}</div>

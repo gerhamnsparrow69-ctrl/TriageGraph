@@ -12,6 +12,7 @@ const nav: NavItem[] = [
   { to: '/admin/topology', label: 'Dependency graph' },
   { to: '/admin/sla', label: 'SLA policies' },
   { to: '/admin/audit', label: 'Audit trail' },
+  { to: '/admin/notifications', label: 'Notifications' },
   { to: '/admin/settings', label: 'Settings' },
 ]
 

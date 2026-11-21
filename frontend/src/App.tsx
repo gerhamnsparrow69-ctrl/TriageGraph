@@ -9,17 +9,27 @@ import TechnicianLayout from './app/layouts/TechnicianLayout'
 import RootRedirect from './app/RootRedirect'
 import { adminRoutes, employeeRoutes, publicRoutes, technicianRoutes } from './app/routes'
 import { ToastProvider } from './app/ui/Toasts'
+import { LiveProvider } from './app/live/LiveProvider'
 import { AuthProvider } from './features/auth/AuthContext'
 import { RequireRole } from './features/auth/RequireRole'
+import { useNotificationStream } from './features/notifications/useNotificationStream'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false } },
 })
 
+function StreamListeners() {
+  useNotificationStream()
+  return null
+}
+
 function Providers() {
   return (
     <AuthProvider>
-      <Outlet />
+      <LiveProvider>
+        <StreamListeners />
+        <Outlet />
+      </LiveProvider>
     </AuthProvider>
   )
 }

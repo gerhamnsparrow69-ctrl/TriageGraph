@@ -1,5 +1,6 @@
 import type { RouteObject } from 'react-router'
 import { authRoutes } from '../features/auth/routes'
+import { notificationRoutes } from '../features/notifications/routes'
 
 /**
  * Feature route registry (blueprint §22, rule 3). Each feature exports arrays from
@@ -14,12 +15,15 @@ export const publicRoutes: RouteObject[] = [
 
 /** Pages inside the blue employee layout, under /employee. */
 export const employeeRoutes: RouteObject[] = [
+  ...notificationRoutes,
 ]
 
 /** Pages inside the teal technician layout, under /technician. */
 export const technicianRoutes: RouteObject[] = [
+  ...notificationRoutes,
 ]
 
 /** Pages inside the indigo admin layout, under /admin. */
 export const adminRoutes: RouteObject[] = [
+  ...notificationRoutes,
 ]
