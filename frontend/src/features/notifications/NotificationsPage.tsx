@@ -1,4 +1,6 @@
+import { Link } from 'react-router'
 import { PageHeader } from '../../app/PageHeader'
+import { useAuth } from '../auth/AuthContext'
 import { useMarkAllRead, useMarkRead, useNotifications, type NotificationItem } from './api'
 
 const priorityClass: Record<string, string> = {
@@ -16,8 +18,16 @@ function timeAgo(iso: string) {
   return new Date(iso).toLocaleDateString()
 }
 
+/** Layout prefix for the incident page, so a notification opens /employee/incidents/7 or /admin/incidents/7. */
+function basePathFor(role: string | undefined) {
+  if (role === 'EMPLOYEE') return '/employee'
+  if (role === 'TECHNICIAN' || role === 'TEAM_LEAD') return '/technician'
+  return '/admin'
+}
+
 function Row({ n }: { n: NotificationItem }) {
   const markRead = useMarkRead()
+  const { user } = useAuth()
   return (
     <li className={`flex gap-3 p-4 ${n.read ? 'bg-white' : 'bg-blue-50/60'}`}>
       <span className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${n.read ? 'bg-transparent' : 'bg-blue-500'}`} />
@@ -29,7 +39,18 @@ function Row({ n }: { n: NotificationItem }) {
           <span className="font-medium text-slate-900">{n.subject.replace(/^\[P\d\] /, '')}</span>
         </div>
         <p className="text-sm text-slate-600 mt-1">{n.body}</p>
-        <div className="text-xs text-slate-400 mt-1">{timeAgo(n.createdAt)}</div>
+        <div className="flex items-center gap-3 text-xs text-slate-400 mt-1">
+          <span>{timeAgo(n.createdAt)}</span>
+          {n.incidentId != null && (
+            <Link
+              to={`${basePathFor(user?.role)}/incidents/${n.incidentId}`}
+              onClick={() => { if (!n.read) markRead.mutate(n.id) }}
+              className="text-indigo-700 hover:underline"
+            >
+              Open incident →
+            </Link>
+          )}
+        </div>
       </div>
       {!n.read && (
         <button onClick={() => markRead.mutate(n.id)} disabled={markRead.isPending}
