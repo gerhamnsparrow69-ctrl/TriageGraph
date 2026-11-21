@@ -1,5 +1,7 @@
 import type { RouteObject } from 'react-router'
+import { auditAdminRoutes } from '../features/audit/routes'
 import { authRoutes } from '../features/auth/routes'
+import { incidentRoutes } from '../features/incident/routes'
 import { notificationRoutes } from '../features/notifications/routes'
 import { usersAdminRoutes } from '../features/users/routes'
 
@@ -17,15 +19,19 @@ export const publicRoutes: RouteObject[] = [
 /** Pages inside the blue employee layout, under /employee. */
 export const employeeRoutes: RouteObject[] = [
   ...notificationRoutes,
+  ...incidentRoutes,
 ]
 
 /** Pages inside the teal technician layout, under /technician. */
 export const technicianRoutes: RouteObject[] = [
   ...notificationRoutes,
+  ...incidentRoutes,
 ]
 
 /** Pages inside the indigo admin layout, under /admin. */
 export const adminRoutes: RouteObject[] = [
   ...notificationRoutes,
   ...usersAdminRoutes,
+  ...incidentRoutes,
+  ...auditAdminRoutes,
 ]
