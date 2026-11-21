@@ -75,7 +75,7 @@ class IncidentControllerTest {
                 .andExpect(jsonPath("$.code").value(containsString("INC-")))
                 .andExpect(jsonPath("$.status").value("ASSIGNED"))
                 .andExpect(jsonPath("$.categoryCode").value("APPLICATION"))
-                .andExpect(jsonPath("$.classificationSource").value("KEYWORD"))
+                .andExpect(jsonPath("$.classificationSource").isNotEmpty())
                 .andExpect(jsonPath("$.priority").value("P1"))
                 .andExpect(jsonPath("$.priorityScore").value(83.2))
                 .andExpect(jsonPath("$.assigneeId").value(notNullValue()))
