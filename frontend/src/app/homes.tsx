@@ -1,5 +1,6 @@
 import { Link } from 'react-router'
 import { useAuth } from '../features/auth/AuthContext'
+import { MyIncidents } from '../features/search/MyIncidents'
 import { PageHeader } from './PageHeader'
 
 export function EmployeeHome() {
@@ -15,9 +16,7 @@ export function EmployeeHome() {
           </Link>
         }
       />
-      <div className="rounded-xl bg-white ring-1 ring-slate-200 p-8 text-center text-slate-500 text-sm">
-        You haven't reported anything yet.
-      </div>
+      <MyIncidents />
     </>
   )
 }
