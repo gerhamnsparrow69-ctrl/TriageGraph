@@ -21,6 +21,8 @@ import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
+import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -50,6 +52,8 @@ public class SecurityConfig {
 
     static final String ROLES_CLAIM = "roles";
 
+    static final String STREAM_PATH = "/api/v1/stream";
+
     @Bean
     SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
         http
@@ -59,8 +63,23 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(PUBLIC_ENDPOINTS).permitAll()
                         .anyRequest().authenticated())
-                .oauth2ResourceServer(rs -> rs.jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
+                .oauth2ResourceServer(rs -> rs
+                        .bearerTokenResolver(bearerTokenResolver())
+                        .jwt(jwt -> jwt.jwtAuthenticationConverter(jwtAuthenticationConverter())));
         return http.build();
+    }
+
+    /**
+     * EventSource can't send an Authorization header, so the SSE stream alone may pass a short-lived
+     * token as {@code ?access_token=}. Every other endpoint still requires the header.
+     */
+    static BearerTokenResolver bearerTokenResolver() {
+        DefaultBearerTokenResolver header = new DefaultBearerTokenResolver();
+        DefaultBearerTokenResolver headerOrQuery = new DefaultBearerTokenResolver();
+        headerOrQuery.setAllowUriQueryParameter(true);
+        return request -> STREAM_PATH.equals(request.getRequestURI())
+                ? headerOrQuery.resolve(request)
+                : header.resolve(request);
     }
 
     @Bean

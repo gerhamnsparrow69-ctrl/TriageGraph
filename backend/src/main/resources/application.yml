@@ -48,6 +48,10 @@ app:
   notify:
     mail-from: triagegraph@localhost
     ntfy-base-url: ${NTFY_BASE_URL:https://ntfy.sh}
+    email-enabled: true
+    push-enabled: true
+    retry-attempts: 3
+    retry-backoff: 500ms
 
 ---
 spring:
