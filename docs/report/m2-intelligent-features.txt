@@ -1,0 +1,302 @@
+# Intelligent triage and technician assignment (Member 2)
+
+*Report sections written by Member 2: intelligent features A (duplicate detection), D (smart technician
+recommendation), F (automatic categorisation) and G (suggested resolution), plus the assignment
+strategies. Figures: `docs/uml/m2-triage-classes.png`, `m2-triage-adapters.png`,
+`m2-assignment-classes.png` and `m2-workflow1-sequence.png`.*
+
+## 1. What this part of the system does
+
+When an employee starts typing a report, TriageGraph already tries to help:
+
+- It **suggests the category and the affected service**, and explains why.
+- It **warns if the same problem has already been reported**, and offers to join that incident instead of
+  opening a new one.
+
+When a technician picks up an incident, it **shows how similar incidents were fixed before** and can draft
+a resolution. Every new incident goes to a technician chosen by one of **four interchangeable assignment
+strategies**, which an administrator can switch at runtime.
+
+All of this runs on the campus server. The meaning model (all-MiniLM-L6-v2) runs inside the Java process,
+so no data leaves the campus unless the optional Google Gemini integration is switched on. Even then, the
+text is masked first.
+
+The work is split into two backend modules with the same internal layering as the rest of the system:
+
+| Module | Packages | Talks to other modules through |
+|---|---|---|
+| `triage` | `api`, `application`, `domain`, `infrastructure` | the shared `TriageService` port it implements; `IncidentQueryPort`, `IncidentCommandPort` and `CatalogQuery`; events `IncidentReported` and `IncidentStatusChanged` |
+| `assignment` | `api`, `application`, `domain`, `infrastructure` | the shared `AssignmentService` port it implements; `UserDirectory`, `CatalogQuery` and the incident ports; event `IncidentStatusChanged` |
+
+Neither module imports another module's classes. Everything goes through the contracts in `shared/`.
+That is why both could be built and tested before the incident and catalog modules existed.
+
+## 2. Turning text into meaning
+
+Every report is turned into a 384-number **meaning vector** by `TextEmbedder`. Reports that mean the same
+thing get vectors that point in nearly the same direction, even when they share no words. Similarity is the
+cosine of the angle between two vectors, from −1 to 1. Vectors are normalised to length 1, so the cosine is
+just the dot product.
+
+- **`MiniLmTextEmbedder`** (Adapter) wraps LangChain4j's in-process all-MiniLM-L6-v2 ONNX model. It needs
+  no API key and no network.
+- **`LexicalHashEmbedder`** is a fallback with no model file. It hashes words and word pairs into 2048
+  buckets, so it sees shared words but not synonyms.
+- **`FallbackTextEmbedder`** (Proxy) tries MiniLM once at startup and permanently falls back to the lexical
+  embedder if the native ONNX runtime cannot load. The choice is made only once because vectors from two
+  embedders cannot be compared.
+
+Vectors live in a **`VectorIndex`**. `InMemoryVectorIndex` does an exact scan of a `ConcurrentHashMap`,
+which takes about a millisecond for a campus-sized desk. The database table `triage_document` is the
+durable copy, and the index is rebuilt from it when the application starts. Moving to pgvector later means
+writing one new `VectorIndex` implementation and changing nothing else.
+
+The text is embedded **once per request**, and that one vector feeds the classifiers, duplicate detection
+and the repeat-submission check.
+
+## 3. Feature A: semantic duplicate detection
+
+### 3.1 Scoring
+
+A new report is compared with **open, live incidents created in the last 72 hours**:
+
+```
+score = 0.80 × cosine(new, existing) + 0.10 × sameService + 0.10 × recency
+recency = 1 − age / window          (1.0 for "just now", 0 at 72 hours)
+```
+
+| Band | Rule | What the employee sees |
+|---|---|---|
+| Likely duplicate | score ≥ 0.62 | Banner: "Looks like INC-1024 (83% match), reported 4 min ago", with **Yes, join** and **No, mine is different** |
+| Possibly related | 0.50 ≤ score < 0.62 | A short list beside the form |
+| Unrelated | score < 0.50 | Nothing |
+
+Most of the score is meaning (80%). The service and recency bonuses separate a true repeat from an older
+or unrelated report. Resolved, closed and merged incidents are never candidates.
+
+### 3.2 Calibration: choosing the threshold from data
+
+The thresholds are measured, not guessed. `triage/duplicate-pairs.tsv` contains 30 labelled pairs:
+
+- 12 real duplicates written differently, e.g. "LMS course pages very slow" vs "Moodle is extremely slow
+  right now".
+- 9 hard negatives: same service, different problem, e.g. "Fee payment page not loading" vs "Fee receipt
+  download shows error 500".
+- 9 unrelated pairs.
+
+Every pair was scored with the production formula, sweeping thresholds from 0.40 to 0.90:
+
+| Threshold | Precision | Recall | F1 |
+|---|---|---|---|
+| 0.56 | 0.75 | 1.00 | 0.86 |
+| 0.60 – 0.64 | 0.92 | 1.00 | **0.96** |
+| 0.66 | 0.89 | 0.67 | 0.76 |
+| 0.74 | 1.00 | 0.58 | 0.74 |
+
+F1 is flat at 0.96 between 0.60 and 0.64, so the default is **0.62**, the middle of that plateau. The one
+false alarm is the fee-page / fee-receipt pair, which is arguably related.
+
+`DuplicateEvaluation` recomputes this table at runtime. The admin Settings page shows it live, with a chart
+of F1, precision and recall against the threshold. Admins can move the threshold and see the trade-off
+immediately.
+
+### 3.3 Acting on a duplicate
+
+| Action | Who | What happens |
+|---|---|---|
+| **Join** (`POST /api/v1/triage/incidents/{id}/join`) | employee | `JoinMergeService` checks the incident is still open and the user is not already on it, then calls the incident module's `joinAsDuplicate`. That adds the user as an affected follower, which raises the affected-user count and can raise the priority. No new ticket is created ("ticket deflection"). |
+| **Merge** (`POST /api/v1/triage/incidents/{id}/merge`) | technician, team lead, admin | Both incidents must be open and different; the incident module then marks the child MERGED. |
+| **Repeat-submission guard** | automatic | If the same reporter sends near-identical text (cosine ≥ 0.95) within 10 minutes, the submission is refused with 409 `DUPLICATE_INCIDENT`, and the message names the ticket they already have. |
+
+## 4. Feature F: automatic category and service suggestion
+
+Three classifiers each give an opinion. Category and service are judged separately, because a classifier
+may be sure about one and not the other.
+
+| Classifier | How it decides | Confidence |
+|---|---|---|
+| `KeywordRuleClassifier` | Admin-editable phrases (`triage_keyword`), whole words only. Multi-word phrases count double. Service aliases such as "UPI" or "fee portal" map to the Fee Payment App. | min(0.90, 0.45 + 0.15 × min(hits, 3)), minus 0.15 if two categories tie |
+| `KnnClassifier` | The 5 most similar **resolved** incidents vote, weighted by similarity. | winning vote share × min(1, top similarity / 0.45) |
+| `LlmClassifier` | Gemini with a JSON response schema. Its `enum`s are built at runtime from the active categories and services, so it can only answer with values that exist. | the model's own confidence, if its answer is valid |
+
+**`EnsembleClassifier`** combines them using the Composite pattern: it is itself an `IncidentClassifier`.
+It works like this:
+
+1. The most confident category wins, except that a more trusted source (Gemini > similar incidents >
+   keywords) wins any vote within 0.10 of the leader.
+2. Each other classifier that agrees adds 0.10 confidence, up to 0.99.
+3. The service comes from the most confident classifier that names one, preferring classifiers that agree
+   on the category.
+4. A classifier that throws an exception is ignored.
+5. If nobody has an opinion, the result is "please choose", with zero confidence.
+6. Below 0.60 confidence, the form says "low confidence: please confirm".
+
+The report form shows every vote under **Why this suggestion?**, so the decision is explainable. For
+example: "5 of 5 similar resolved incidents were APPLICATION (closest HIST-001, 79% similar) · confirmed by
+keywords".
+
+**Measured accuracy (leave-one-out on the 60 archived incidents):**
+- Category: kNN alone 72%; keywords plus kNN together **82%**.
+- Service: **87%**.
+
+**New category with zero code changes:** an admin adds a category in the catalog and one keyword on the
+Settings page. The very next preview can use it: keyword matching reads the database, the Gemini schema
+lists the current categories, and kNN learns it from the first resolved incident.
+`TriageAdminServicesTest.addedKeywordIsUsedByTheVeryNextClassification` proves this.
+
+## 5. Feature G: suggested resolution
+
+`ResolutionAdvisor` has two layers:
+
+- **`HistoricalResolutionAdvisor`** (always available, deterministic) finds the 3 most similar resolved
+  incidents with at least 30% similarity. It drafts from the closest one: "Closest past fix (HIST-002, 81%
+  similar): Renewed the expired TLS certificate… Root cause then: …".
+- **`LlmResolutionAdvisor`** (Decorator) wraps any advisor. When AI is allowed, it sends the incident and
+  the retrieved past fixes to Gemini and asks for 3 to 5 numbered steps that cite the incident codes used.
+  This is retrieval-augmented generation: the model only rephrases fixes the campus has actually used. If
+  Gemini is off, slow or failing, the wrapped advisor's answer comes back unchanged.
+
+When an incident is resolved, its resolution text is stored in the knowledge base (`applyStatus`), so the
+next similar incident benefits. Technicians can also search past fixes in plain words on the
+**Knowledge base** page.
+
+## 6. Using Google Gemini safely
+
+| Concern | How it is handled |
+|---|---|
+| The rubric asks for a Google API | `GeminiLlmClient` calls `models/{model}:generateContent` with structured JSON output; the key goes in the `x-goog-api-key` header and comes from the `GEMINI_API_KEY` environment variable only |
+| Free-tier quota and repeated demos | `CachingLlmClient` (Decorator): LRU cache keyed by SHA-256 of the prompt |
+| Outages and timeouts | `CircuitBreakerLlmClient` (Decorator): after 3 failures in a row, calls are skipped for 60 s; then one trial call; failures never reach the user |
+| No key configured | `NoOpLlmClient` (Null Object): everything works on the local classifiers; no `if (llm != null)` anywhere |
+| Personal data | `PiiMasker` replaces e-mail addresses, Indian mobile numbers and BITS ID numbers before any text is sent |
+| Prompt injection | Report text is fenced in `<report>` tags and the system prompt says it is untrusted data; answers outside the allowed values are discarded |
+| The AI deciding things | The LLM is advisory only. It never sets priority; the documented priority formula does |
+
+The adapter uses the JDK's `java.net.http` client and a small JSON reader and writer (`Json`). This keeps
+it independent of the Jackson major version shipped by Spring Boot 4. It also let us test the adapter end
+to end against a local HTTP server that imitates Gemini (`GeminiLlmClientTest`).
+
+## 7. Feature D and technician assignment strategies
+
+Every assignment follows the same pipeline:
+
+1. Resolve the required skill. The catalog may map a category to a skill; otherwise the category code is
+   the skill.
+2. Load technicians from the user directory and add their fix history.
+3. Run the `EligibilityFilter`: right skill, marked available, below maximum load. It raises different
+   errors for "nobody has this skill" (`TechnicianUnavailableException`) and "everyone with it is full"
+   (`WorkloadExceededException`), so the team lead knows what is wrong.
+4. Let the active strategy rank the eligible technicians.
+
+| Strategy | Rule |
+|---|---|
+| `SMART` (default; Feature D) | smart = w₁·skill + w₂·headroom + w₃·serviceExperience + w₄·seniority. Normal weights (P3, P4) are 0.40, 0.25, 0.20, 0.15. Urgent weights (P1, P2) are 0.35, 0.15, 0.20, 0.30, so senior engineers are preferred when it matters. headroom = 1 − load/max; serviceExperience = min(past fixes on this service, 5)/5; seniority = min(years, 10)/10 |
+| `SKILL_BASED` | prefers specialists (fewer other skills), then lower load |
+| `LOAD_BALANCED` | lowest load ratio first |
+| `ROUND_ROBIN` | takes turns per category; previews never move the turn, only real assignments do |
+
+**Worked example (Workflow 1):** a P1 on the Fee Payment App, using the urgent weights.
+
+| Technician | Skill | Headroom | Service experience | Seniority | Score |
+|---|---|---|---|---|---|
+| Sneha Reddy (load 1/6, 3 fixes, 4 yrs) | 0.35 × 1 | 0.15 × 5/6 | 0.20 × 3/5 | 0.30 × 0.4 | **0.715** |
+| Ananya Iyer (load 3/4, 1 fix, 8 yrs) | 0.35 × 1 | 0.15 × 1/4 | 0.20 × 1/5 | 0.30 × 0.8 | 0.668 |
+
+Every recommendation carries readable reasons, for example "APPLICATION skill · load 1/6 · 3 past fixes on
+Fee Payment App · 4 yrs experience · P1: seniority weighted higher".
+
+**Where the experience comes from:** the identity module has no incident history. So the assignment
+module keeps its own ledger, `technician_fix`. It is filled from the seeded archive and, through the
+`IncidentStatusChanged` event, every time an incident is resolved. The ledger is keyed by incident code,
+so recording the same fix twice is harmless.
+
+**Switching strategies:** the active key is stored in `assignment_settings`. The admin switches it on the
+Settings page (`PUT /api/v1/admin/assignment/settings`), and the next assignment uses the new strategy
+with no restart. The **Compare strategies** tool shows what each strategy would pick for the same
+incident, which makes the Strategy pattern visible in the demo.
+
+**Workload and reassignment:** technicians see their own queue, ordered by "needs action first, then
+priority, then earliest deadline". Team leads see their team's load and can reassign. A full or
+unavailable technician is refused unless an administrator overrides, and the override is written into the
+audit reason.
+
+## 8. Object-oriented design in these modules
+
+| Principle or pattern | Where |
+|---|---|
+| **Strategy** | `AssignmentStrategy` (4 implementations), switched at runtime |
+| **Template Method** | `AbstractScoringStrategy.rank()` is final; subclasses only implement `score()` |
+| **Registry** | `AssignmentStrategyRegistry` looks strategies up by key; an unknown key gives a clear error |
+| **Composite** | `EnsembleClassifier` is an `IncidentClassifier` made of `IncidentClassifier`s |
+| **Decorator** | `LlmResolutionAdvisor`, `CachingLlmClient`, `CircuitBreakerLlmClient` |
+| **Adapter** | `MiniLmTextEmbedder`, `GeminiLlmClient`, `ServiceCatalogAdapter`, `CatalogServiceNames` |
+| **Proxy** | `FallbackTextEmbedder` decides once which real embedder serves the calls |
+| **Null Object** | `NoOpLlmClient` |
+| **Facade** | `TriageServiceImpl` gives one entry point over embedding, classification, duplicates and advice |
+| **Observer** | `TriageEventListener` and `AssignmentEventListener` react to shared domain events after commit |
+| **Repository** | domain repository interfaces (`KnowledgeRepository`, `TechnicianFixRepository`, …) with JPA adapters in `infrastructure` |
+| Encapsulation | `KnowledgeDocument` exposes behaviour (`recordResolution`, `changeStatus`), not setters; value objects are immutable records that validate themselves (`DuplicatePolicy`, `SmartScoreStrategy.Weights`, `LlmPrompt`) |
+| Single responsibility | the detector only scores duplicates, the guard only blocks repeats, each classifier only classifies |
+| Open/closed | a new strategy, classifier, embedder or LLM provider is one new class; a new category or alias is a database row |
+| Liskov substitution | `AssignmentStrategyContractTest` runs the same contract against every strategy |
+| Interface segregation | small ports: `TextEmbedder`, `VectorIndex`, `KeywordRules`, `ServiceNameLookup` |
+| Dependency inversion | domain classes depend on `LlmClient` and `TextEmbedder` interfaces; only `TriageConfig` (the composition root) knows that Gemini, LangChain4j and the in-memory index sit behind them |
+| Collections | `ConcurrentHashMap` (vector index, round-robin cursors), access-ordered `LinkedHashMap` (LRU cache), `EnumSet` (status groups), records for immutable data |
+| Exceptions | shared exceptions only, mapped by the global handler: 409 for duplicates and capacity, 400 for invalid input, 503 when a needed module or Gemini is unavailable (`TriageDependencyUnavailableException`, `AssignmentDependencyUnavailableException`, `LlmUnavailableException`) |
+
+## 9. Data
+
+| Table | Purpose |
+|---|---|
+| `triage_document` | knowledge base: archived and live incidents (code, title, description, category, service, status, resolution, root cause, resolver, timestamps) |
+| `triage_keyword` | keyword rules and service aliases (target, key, phrase), unique per triple |
+| `triage_settings` | single row: duplicate thresholds, window, AI switch, who changed it |
+| `assignment_settings` | single row: active strategy, who changed it and when |
+| `technician_fix` | one row per resolved incident and technician, for service experience |
+
+Seed data: `triage/historical-incidents.tsv` has 60 resolved campus incidents across all 9 categories and
+17 services, with resolutions and root causes. `HistoricalIncidentSeeder` loads it in the `dev` and `demo`
+profiles (order 30) and credits each resolver with a fix.
+
+## 10. Endpoints
+
+| Method and path | Role | Purpose |
+|---|---|---|
+| `POST /api/v1/triage/preview` | any signed-in user | suggestion, votes, duplicate bands while typing |
+| `GET /api/v1/triage/options` | any | categories and services for the form |
+| `POST /api/v1/triage/incidents/{id}/join` | employee, technician, team lead | follow an existing incident |
+| `POST /api/v1/triage/incidents/{id}/merge` | technician, team lead, admin | merge into a parent |
+| `GET /api/v1/triage/incidents/{id}/similar` | staff | similar resolved incidents |
+| `POST /api/v1/triage/incidents/{id}/resolution-suggestion` | staff | suggested fix (AI draft optional) |
+| `POST /api/v1/triage/knowledge/search` | staff | search past fixes in plain words |
+| `GET/PUT /api/v1/admin/triage/settings`, `GET /status`, `GET /evaluation`, `GET/POST/DELETE /keywords` | admin (IT manager read-only) | tuning, health, measured accuracy, keyword rules |
+| `POST /api/v1/assignment/recommendations`, `POST /compare` | staff / team lead, admin | ranked technicians; every strategy side by side |
+| `GET /api/v1/assignment/incidents/{id}/recommendations` | team lead, admin | for an existing incident |
+| `POST /api/v1/assignment/incidents/{id}/reassign` | team lead, admin | manual reassignment with capacity rules |
+| `GET /api/v1/assignment/workload/me`, `GET /workload` | technician / team lead, admin | queues and load |
+| `GET/PUT /api/v1/admin/assignment/settings` | admin (IT manager read-only) | switch strategy live |
+
+## 11. Testing
+
+138 test methods cover these modules (details in `docs/test-cases.txt`). Highlights:
+
+- Exact boundary tests for the duplicate threshold (TC11) and for maximum workload (TC12).
+- The Gemini adapter tested over real HTTP against a local server, including quota errors and blocked
+  answers (TC19).
+- A contract suite that runs every assignment strategy through the same checks.
+- End-to-end facade tests with in-memory repositories and a fixed clock.
+- MockMvc tests for security and validation.
+- An evaluation test that runs the real MiniLM model.
+
+## 12. Limitations and future work
+
+- **English-centric model.** Hinglish or mixed-language reports are understood less well. A multilingual
+  model (e.g. paraphrase-multilingual-MiniLM) would be a drop-in `TextEmbedder`.
+- **Small evaluation set.** 30 labelled pairs is enough to choose a threshold and show the method, not to
+  claim production accuracy. The set should grow from real merge decisions.
+- **In-memory vector index.** Fine for thousands of incidents; pgvector with an HNSW index behind the same
+  interface is the scale path.
+- **Service experience only counts the exact service.** Counting fixes on neighbouring services in the
+  dependency graph would need a small new shared port from the topology module.
+- **Gemini's free tier has tight, changing quotas.** The cache and circuit breaker keep the system usable,
+  and the local classifiers are always the fallback.

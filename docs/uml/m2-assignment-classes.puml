@@ -1,0 +1,107 @@
+@startuml m2-assignment-classes
+title Assignment module (Member 2): four interchangeable strategies
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam class {
+  BackgroundColor #F5F3FF
+  BorderColor #7C3AED
+}
+hide empty members
+
+package "shared.contracts" #EEF2FF {
+  interface AssignmentService <<port>> {
+    +autoAssign(AssignmentRequest): TechnicianRecommendation
+    +recommend(AssignmentRequest, topK): List<TechnicianRecommendation>
+  }
+  interface UserDirectory <<port>>
+  interface IncidentCommandPort <<port>>
+  interface IncidentQueryPort <<port>>
+  class TechnicianProfile <<record>> {
+    id, name, skills, activeLoad, maxLoad,
+    experienceYears, fixesByService, available
+  }
+}
+
+package "assignment.domain" {
+  interface AssignmentStrategy <<Strategy>> {
+    +key(): String
+    +rank(AssignmentContext, List<TechnicianProfile>): List<TechnicianRecommendation>
+    +onAssigned(AssignmentContext, technicianId)
+  }
+  abstract class AbstractScoringStrategy <<Template Method>> {
+    +rank(...) {final}
+    #{abstract} score(AssignmentContext, TechnicianProfile): Score
+  }
+  class SmartScoreStrategy {
+    +{static} NORMAL: Weights
+    +{static} URGENT: Weights
+    -experienceCap: int
+  }
+  class SkillBasedStrategy
+  class LoadBalancedStrategy
+  class RoundRobinStrategy {
+    -lastAssignedByCategory: Map<String, Long>
+  }
+  class AssignmentStrategyRegistry <<Registry>> {
+    +get(key): AssignmentStrategy
+    +contains(key): boolean
+  }
+  class EligibilityFilter {
+    +eligible(skill, technicians): List<TechnicianProfile>
+  }
+  class AssignmentContext <<record>> {
+    request: AssignmentRequest
+    requiredSkill: String
+    +urgent(): boolean
+  }
+  class AssignmentSettings <<entity>> {
+    -activeStrategy: String
+    +switchTo(key, actor, now)
+  }
+  class TechnicianFix <<entity>> {
+    -technicianId: long
+    -serviceId: Long
+    -incidentCode: String
+  }
+  interface ServiceNameLookup
+}
+
+package "assignment.application" {
+  class AssignmentServiceImpl {
+    +recommendWith(key, req, topK)
+    +compare(req): List<StrategyOutcome>
+  }
+  class AssignmentSettingsService
+  class ExperienceService {
+    +recordFix(...)
+    +enrich(profiles): List<TechnicianProfile>
+  }
+  class WorkloadService
+  class ReassignmentService
+  class RequiredSkillResolver
+  class AssignmentEventListener <<Observer>>
+}
+
+AssignmentService <|.. AssignmentServiceImpl
+AssignmentServiceImpl --> AssignmentStrategyRegistry
+AssignmentServiceImpl --> AssignmentSettingsService
+AssignmentServiceImpl --> EligibilityFilter
+AssignmentServiceImpl --> ExperienceService
+AssignmentServiceImpl --> RequiredSkillResolver
+AssignmentServiceImpl ..> UserDirectory
+AssignmentStrategyRegistry o-- "1..*" AssignmentStrategy
+AssignmentStrategy <|.. AbstractScoringStrategy
+AssignmentStrategy <|.. RoundRobinStrategy
+AbstractScoringStrategy <|-- SmartScoreStrategy
+AbstractScoringStrategy <|-- SkillBasedStrategy
+AbstractScoringStrategy <|-- LoadBalancedStrategy
+SmartScoreStrategy --> ServiceNameLookup
+AssignmentStrategy ..> AssignmentContext
+AssignmentStrategy ..> TechnicianProfile
+AssignmentSettingsService --> AssignmentSettings
+ExperienceService "1" --> "*" TechnicianFix
+AssignmentEventListener --> ExperienceService
+AssignmentEventListener ..> IncidentQueryPort
+ReassignmentService ..> IncidentCommandPort
+WorkloadService ..> IncidentQueryPort
+@enduml
