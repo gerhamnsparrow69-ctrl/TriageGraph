@@ -2,7 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createBrowserRouter, Outlet, RouterProvider } from 'react-router'
 import ComingSoon from './app/ComingSoon'
 import { ForbiddenPage, NotFoundPage } from './app/ErrorPages'
-import { AdminHome, EmployeeHome, TechnicianHome } from './app/homes'
+import { EmployeeHome, TechnicianHome } from './app/homes'
 import AdminLayout from './app/layouts/AdminLayout'
 import EmployeeLayout from './app/layouts/EmployeeLayout'
 import TechnicianLayout from './app/layouts/TechnicianLayout'
@@ -12,6 +12,7 @@ import { ToastProvider } from './app/ui/Toasts'
 import { LiveProvider } from './app/live/LiveProvider'
 import { AuthProvider } from './features/auth/AuthContext'
 import { RequireRole } from './features/auth/RequireRole'
+import CommandCentre from './features/dashboard/CommandCentre'
 import { useNotificationStream } from './features/notifications/useNotificationStream'
 
 const queryClient = new QueryClient({
@@ -53,7 +54,7 @@ const router = createBrowserRouter([
       {
         path: '/admin',
         element: <RequireRole roles={['ADMIN', 'IT_MANAGER']}><AdminLayout /></RequireRole>,
-        children: [{ index: true, element: <AdminHome /> }, ...adminRoutes, { path: '*', element: <ComingSoon /> }],
+        children: [{ index: true, element: <CommandCentre /> }, ...adminRoutes, { path: '*', element: <ComingSoon /> }],
       },
       { path: '/403', element: <ForbiddenPage /> },
       { path: '*', element: <NotFoundPage /> },

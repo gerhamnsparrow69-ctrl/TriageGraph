@@ -30,20 +30,3 @@ export function TechnicianHome() {
     </>
   )
 }
-
-export function AdminHome() {
-  const tiles = ['Open incidents', 'Critical open', 'SLA compliance', 'MTTR']
-  return (
-    <>
-      <PageHeader title="Command Centre" subtitle="Live view of the service desk." />
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {tiles.map((t) => (
-          <div key={t} className="rounded-xl bg-white ring-1 ring-slate-200 p-4">
-            <div className="text-xs uppercase tracking-wide text-slate-500">{t}</div>
-            <div className="text-2xl font-semibold text-slate-300 mt-1">–</div>
-          </div>
-        ))}
-      </div>
-    </>
-  )
-}
