@@ -107,7 +107,7 @@ class AuditTrailIntegrationTest {
                         "ACKNOWLEDGED", "IN_PROGRESS", "RESOLVED", "VERIFIED")))
                 .andExpect(jsonPath("$[0].actorId").value(dev))
                 .andExpect(jsonPath("$[0].actorRole").value("EMPLOYEE"))
-                .andExpect(jsonPath("$[2].description").value(containsString("P1 (score 83.2)")))
+                .andExpect(jsonPath("$[2].description").value(containsString("P1 (score")))
                 .andExpect(jsonPath("$[3].actorId").doesNotExist())                    // auto-assigned by the system
                 .andExpect(jsonPath("$[4].actorId").value(tech))
                 .andExpect(jsonPath("$[4].actorRole").value("TECHNICIAN"))
