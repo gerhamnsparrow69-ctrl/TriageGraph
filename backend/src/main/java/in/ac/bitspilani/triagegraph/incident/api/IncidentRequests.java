@@ -42,7 +42,12 @@ final class IncidentRequests {
     record Resolve(@NotBlank @Size(max = 2000) String summary, @Size(max = 1000) String rootCause) {
     }
 
-    record Note(@NotBlank @Size(max = InvestigationNote.MAX_LENGTH) String text, boolean internal) {
+    /** {@code internal} is optional (Jackson 3 rejects a missing primitive, so it is a Boolean). */
+    record Note(@NotBlank @Size(max = InvestigationNote.MAX_LENGTH) String text, Boolean internal) {
+
+        boolean isInternal() {
+            return Boolean.TRUE.equals(internal);
+        }
     }
 
     record Feedback(@Min(1) @Max(5) int rating, @Size(max = 1000) String comment) {

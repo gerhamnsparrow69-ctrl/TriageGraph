@@ -104,7 +104,7 @@ public class IncidentController {
     @PostMapping("/{id}/notes")
     public IncidentView addNote(@PathVariable long id, @Valid @RequestBody IncidentRequests.Note body,
             @AuthenticationPrincipal Jwt jwt) {
-        return lifecycle.addNote(id, body.text(), body.internal(), JwtActors.from(jwt));
+        return lifecycle.addNote(id, body.text(), body.isInternal(), JwtActors.from(jwt));
     }
 
     @PostMapping("/{id}/feedback")
