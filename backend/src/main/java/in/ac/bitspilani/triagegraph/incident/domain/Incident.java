@@ -306,6 +306,26 @@ public class Incident implements Trackable {
         }
     }
 
+    /**
+     * Another user reports the same problem and joins instead of opening a new ticket (blueprint workflow
+     * 1b): they follow the incident and count as one more affected user, so the caller re-assesses the
+     * priority. Returns false (and changes nothing) for the reporter or someone already following.
+     */
+    public boolean joinAsAffected(long userId, Actor by, Instant now) {
+        if (isTerminal()) {
+            throw new InvalidStateTransitionException("Cannot join " + label() + " because it is " + status + ".");
+        }
+        if (userId == reporterId || followerIds.contains(userId)) {
+            return false;
+        }
+        followerIds.add(userId);
+        affectedUsers++;
+        updatedAt = now;
+        long incidentId = id;
+        raise(i -> new DuplicateLinked(i.id, i.getCode(), by.id(), now, incidentId, userId, false));
+        return true;
+    }
+
     // ------------------------------------------------------------------ permissions
 
     /** Object-level access (IDOR protection): who may open this incident at all. */

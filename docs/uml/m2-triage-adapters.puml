@@ -1,0 +1,68 @@
+@startuml m2-triage-adapters
+title Triage infrastructure (Member 2): adapters, decorators, proxy and null object
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam class {
+  BackgroundColor #F5F3FF
+  BorderColor #7C3AED
+}
+hide empty members
+
+interface TextEmbedder <<domain port>> {
+  +embed(text): float[]
+  +name(): String
+}
+class MiniLmTextEmbedder <<Adapter>> {
+  LangChain4j all-MiniLM-L6-v2, in-process ONNX
+}
+class LexicalHashEmbedder {
+  feature hashing, no model file
+}
+class FallbackTextEmbedder <<Proxy>> {
+  chooses once at startup
+}
+TextEmbedder <|.. MiniLmTextEmbedder
+TextEmbedder <|.. LexicalHashEmbedder
+TextEmbedder <|.. FallbackTextEmbedder
+FallbackTextEmbedder o-- TextEmbedder : preferred / fallback
+
+interface VectorIndex <<domain port>>
+class InMemoryVectorIndex {
+  ConcurrentHashMap<Long, Entry>
+  exact cosine search
+}
+VectorIndex <|.. InMemoryVectorIndex
+
+interface LlmClient <<domain port>> {
+  +generateText(LlmPrompt): Optional<String>
+  +generateJson(LlmPrompt, schema): Optional<Map>
+  +enabled(): boolean
+  +status(): String
+}
+class CachingLlmClient <<Decorator>> {
+  LRU by SHA-256(prompt)
+}
+class CircuitBreakerLlmClient <<Decorator>> {
+  CLOSED → OPEN → HALF_OPEN
+}
+class GeminiLlmClient <<Adapter>> {
+  java.net.http + JSON schema output
+}
+class NoOpLlmClient <<Null Object>> {
+  used without GEMINI_API_KEY
+}
+LlmClient <|.. CachingLlmClient
+LlmClient <|.. CircuitBreakerLlmClient
+LlmClient <|.. GeminiLlmClient
+LlmClient <|.. NoOpLlmClient
+CachingLlmClient o-- LlmClient : wraps
+CircuitBreakerLlmClient o-- LlmClient : wraps
+
+class TriageConfig <<composition root>> {
+  wires: Caching(CircuitBreaker(Gemini)) or NoOp
+  wires: Fallback(MiniLM, Lexical)
+}
+TriageConfig ..> CachingLlmClient
+TriageConfig ..> FallbackTextEmbedder
+TriageConfig ..> InMemoryVectorIndex
+@enduml

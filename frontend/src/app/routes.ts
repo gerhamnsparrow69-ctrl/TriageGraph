@@ -1,11 +1,14 @@
 import type { RouteObject } from 'react-router'
+import { assignmentTechnicianRoutes } from '../features/assignment/routes'
 import { auditAdminRoutes } from '../features/audit/routes'
 import { authRoutes } from '../features/auth/routes'
 import { incidentRoutes } from '../features/incident/routes'
 import { notificationRoutes } from '../features/notifications/routes'
-import { usersAdminRoutes } from '../features/users/routes'
 import { reportsAdminRoutes } from '../features/reports/routes'
 import { searchAdminRoutes, searchTechnicianRoutes } from '../features/search/routes'
+import { settingsAdminRoutes } from '../features/settings/routes'
+import { triageEmployeeRoutes, triageTechnicianRoutes } from '../features/triage/routes'
+import { usersAdminRoutes } from '../features/users/routes'
 
 /**
  * Feature route registry (blueprint §22, rule 3). Each feature exports arrays from
@@ -22,12 +25,15 @@ export const publicRoutes: RouteObject[] = [
 export const employeeRoutes: RouteObject[] = [
   ...notificationRoutes,
   ...incidentRoutes,
+  ...triageEmployeeRoutes,
 ]
 
 /** Pages inside the teal technician layout, under /technician. */
 export const technicianRoutes: RouteObject[] = [
   ...notificationRoutes,
   ...incidentRoutes,
+  ...triageTechnicianRoutes,
+  ...assignmentTechnicianRoutes,
   ...searchTechnicianRoutes,
 ]
 
@@ -37,6 +43,7 @@ export const adminRoutes: RouteObject[] = [
   ...usersAdminRoutes,
   ...incidentRoutes,
   ...auditAdminRoutes,
+  ...settingsAdminRoutes,
   ...searchAdminRoutes,
   ...reportsAdminRoutes,
 ]

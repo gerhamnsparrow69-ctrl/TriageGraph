@@ -5,6 +5,8 @@ import { technicianTheme } from './themes'
 const nav: NavItem[] = [
   { to: '/technician', label: 'My queue' },
   { to: '/technician/search', label: 'Search incidents' },
+  { to: '/technician/knowledge', label: 'Knowledge base' },
+  { to: '/technician/team', label: 'Team workload' },
   { to: '/technician/topology', label: 'Service map' },
   { to: '/technician/notifications', label: 'Notifications' },
 ]

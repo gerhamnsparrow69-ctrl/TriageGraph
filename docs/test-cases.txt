@@ -1,0 +1,94 @@
+# TriageGraph test cases
+
+This is the documented test plan for the report (deliverable 8: at least 15 meaningful test cases). It
+follows blueprint §16. Each row names the JUnit test that proves the case. **Member 2 compiles this
+document**: everyone sends their test names and the actual results after `./mvnw verify`, and the
+**Actual** and **Status** columns are then filled in from the Surefire report
+(`backend/target/surefire-reports`).
+
+Legend: ✅ passed · ⏳ waiting for the owner's module · 🔁 run on the team's machines (needs Spring or the ONNX model)
+
+## The 32 planned cases
+
+| ID | Category | Module (owner) | Scenario | Expected result | Test | Status |
+|---|---|---|---|---|---|---|
+| TC01 | Normal | incident (M1) | Employee reports the payment-app outage | 201; status ASSIGNED; P1; SLA set; audit has CREATED, CLASSIFIED, PRIORITY_SET, ASSIGNED | *M1 to add* | ⏳ |
+| TC02 | Normal | priority (M1) | I=4, U=4, C=4, 300 users, 0 dependents | score 83.2, P1, rationale lists the factors | *M1 to add* | ⏳ |
+| TC03 | Normal | assignment (M2) | `SKILL_BASED` with 3 technicians, only one skilled; tie between equally skilled | skilled technician chosen; tie goes to lower load | `SkillBasedStrategyTest.chooseTheOnlySkilledTechnician`, `…tieBetweenEquallySkilledGoesToLowerLoad` | ✅ |
+| TC04 | Normal | assignment (M2) | `ROUND_ROBIN`, 3 eligible, 4 assignments | order A, B, C, A | `RoundRobinStrategyTest.fourAssignmentsCycleThroughThreeTechnicians` | ✅ |
+| TC05 | Normal | incident/audit (M1) | Full lifecycle NEW → CLOSED | ≥ 9 ordered audit entries with correct from/to states | *M1 to add* | ⏳ |
+| TC06 | Normal | notification (M4) | `IncidentAssigned` for a P1 | in-app row; one Mailpit email; push gateway called once | *M4 to add* | ⏳ |
+| TC07 | Boundary | priority (M1) | score exactly 40.0 vs 39.9 | P1 vs P2 | *M1 to add* | ⏳ |
+| TC08 | Boundary | priority (M1) | affected users 9/10, 49/50, 199/200 | multipliers change at each boundary | *M1 to add* | ⏳ |
+| TC09 | Boundary | sla (M3) | elapsed 74.9 % vs exactly 75 % | ON_TRACK vs AT_RISK; warning raised once | *M3 to add* | ⏳ |
+| TC10 | Boundary | sla (M3) | exactly at the deadline | BREACHED; one `SlaViolation` row after 3 ticks | *M3 to add* | ⏳ |
+| TC11 | Boundary | triage (M2) | Combined duplicate score exactly at the threshold vs 0.001 below (same service, just reported: score = 0.8·cos + 0.2) | 0.600 → "likely duplicate"; 0.599 → only "possibly related" | `DuplicateDetectorTest.scoreExactlyAtTheThresholdIsALikelyDuplicateAndJustBelowIsOnlyRelated` | ✅ |
+| TC12 | Boundary | assignment (M2) | Technician at max load; all skilled technicians full; nobody skilled | 5/6 eligible, 6/6 excluded; all full → `WorkloadExceededException`; nobody skilled → 409 `TECHNICIAN_UNAVAILABLE` | `EligibilityFilterTest.technicianAtMaxLoadIsExcludedButOneBelowIsEligible`, `…everySkilledTechnicianFullThrowsWorkloadExceeded`; `AssignmentApiIntegrationTest.recommendationForASkillNobodyHasIsAConflict` | ✅ / 🔁 |
+| TC13 | Invalid input | incident (M1) | blank description; 4001 characters; impact = 7 | 400 ProblemDetail with field errors | *M1 to add* | ⏳ |
+| TC14 | Invalid input | catalog (M3) | serviceId that does not exist | 404 `ServiceNotFoundException` | *M3 to add* | ⏳ |
+| TC15 | Invalid input | identity (M4) | register with a weak password or an existing email | 400 / 409 with a clear message | `AuthControllerTest.registerRejectsWeakPasswordAndDuplicateEmail` | 🔁 |
+| TC16 | Exception | incident (M1) | close() on a NEW incident | 409 `InvalidStateTransitionException`; state unchanged | *M1 to add* | ⏳ |
+| TC17 | Exception | incident (M1) | resolve() while ASSIGNED | 409; no audit entry for the rejected action | *M1 to add* | ⏳ |
+| TC18 | Exception | sla (M3) | no service policy and no default for P2 | `SlaConfigurationMissingException`; admin alerted | *M3 to add* | ⏳ |
+| TC19 | Exception | triage (M2) | Gemini fails (HTTP 429, timeout, invalid JSON, or no network) | adapter raises `LlmUnavailableException`; circuit opens after 3 failures; classification still answers from the local classifiers (source ≠ LLM) | `GeminiLlmClientTest.httpErrorsAndInvalidAnswersBecomeLlmUnavailable`, `LlmDecoratorsTest.circuitOpensAfterRepeatedFailuresAndClosesAfterASuccessfulTrial`, `TriageServiceImplTest.geminiFailureFallsBackToLocalClassifiers` | ✅ |
+| TC20 | Exception | notification (M4) | SMTP down | 3 retries; log status FAILED; incident flow unaffected | *M4 to add* | ⏳ |
+| TC21 | Exception | topology (M3) | dependency that creates a cycle | 422 `CyclicDependencyException`; graph unchanged | *M3 to add* | ⏳ |
+| TC22 | Exception | triage (M2) | Same reporter sends near-identical text within 10 minutes | 409 `DUPLICATE_INCIDENT` naming the existing ticket; another reporter or an older report passes | `RepeatSubmissionGuardTest.sameReporterResubmittingWithinTheWindowIsRejected`, `…otherReportersOlderReportsAndDifferentTextArePassed`, `TriageServiceImplTest.sameReporterSendingTheSameTextAgainIsBlocked` | ✅ |
+| TC23 | Authorisation | identity (M4), triage + assignment (M2) | Employee calls admin endpoints | 403 | `AuthControllerTest.employeeCannotUseAdminEndpoints`; `TriageApiIntegrationTest.employeeCannotChangeTriageSettings`; `AssignmentApiIntegrationTest.unknownStrategyIsBadInputAndOnlyAdminsMaySwitch` | 🔁 |
+| TC24 | Authorisation | incident (M1) | Employee A requests Employee B's incident | 403 | *M1 to add* (domain rule already in `UserHierarchyTest.employeesOnlySeeTheirOwnOrJoinedIncidents`) | ⏳ |
+| TC25 | Authorisation | incident (M1) | Technician resolves someone else's incident | 403 `UnauthorizedOperationException` | *M1 to add* (domain rule in `UserHierarchyTest.onlyTheAssigneeTechnicianCanWorkTheIncident`) | ⏳ |
+| TC26 | Authorisation | identity (M4) | 5 wrong passwords, then the right one | 401 ×5, then 423 locked for 5 minutes | `AuthControllerTest.fiveWrongPasswordsLockTheAccount` | 🔁 |
+| TC27 | Authorisation | identity (M4) | missing or expired JWT | 401 | `AuthControllerTest.meWithoutTokenIs401`, `SecurityConfigTest.expiredTokenIs401` | 🔁 |
+| TC28 | Business rule | sla (M3) | 10 minutes in PENDING_INFO, then provideInfo | resolution deadline moves 10 minutes later | *M3 to add* | ⏳ |
+| TC29 | Business rule | triage (M2) + incident (M1) | Employee joins a likely duplicate | open incident → `IncidentCommandPort.joinAsDuplicate`; closed one → 409 "report a new incident"; already following → 400. M1's command adds the follower, raises affected users and re-prioritises | `JoinMergeServiceTest.joiningAnOpenIncidentCallsTheCommandPort`, `…joiningAClosedIncidentOrOneYouAlreadyFollowIsRejected`; priority bump: `IncidentCommandService.joinAsDuplicate` (re-assesses priority with the new count) | ✅ / ⏳ |
+| TC30 | Business rule | topology (M3) | incidents on LMS, ERP, Email + SSO change logged | top candidate SSO 0.783; major incident with 3 children | *M3 to add* | ⏳ |
+| TC31 | Business rule | escalation (M3) | unacknowledged P1 past response deadline, then +5 min | level 2, then level 3; both audited | *M3 to add* | ⏳ |
+| TC32 | Architecture | all | ArchUnit layering rules; audit hash chain with one tampered row | rules pass; verify names the tampered row | *M1 to add* | ⏳ |
+
+## Member 2's additional tests (138 test methods)
+
+All of these run with `./mvnw verify`. The 124 unit tests were run here and pass. The 14 marked 🔁
+start Spring or load the ONNX model, so they run on the team's machines.
+
+| Test class | Tests | What it proves |
+|---|---|---|
+| `AssignmentStrategyContractTest` | 5 | **Liskov substitution**: the same contract runs against all four strategies (each eligible technician once, scores 0–1 sorted, reasons given, no side effects) |
+| `SmartScoreStrategyTest` | 5 | Workflow 1 example (Sneha 0.715 vs Ananya 0.668), P1/P2 vs P3/P4 weights, experience cap, weight validation |
+| `EligibilityFilterTest` | 6 | skill, availability and capacity rules; the two different exceptions |
+| `RoundRobinStrategyTest` | 4 | rotation, previews don't move the cursor, per-category turns, wrap-around |
+| `SkillBasedStrategyTest`, `LoadBalancedStrategyTest` | 6 | specialist preference, load ratio, deterministic ties |
+| `AssignmentStrategyRegistryTest` | 3 | lookup by key, unknown key, duplicate keys |
+| `AssignmentServiceImplTest` | 8 | strategy switched at runtime changes the next assignment; compare tool; invalid input |
+| `ExperienceServiceTest`, `WorkloadServiceTest`, `ReassignmentServiceTest` | 9 | fix ledger is idempotent; queue ordering; team view; capacity rules with admin override; 503 without the incident module |
+| `DuplicateDetectorTest` | 6 | TC11, service and recency bonuses, only open live incidents in the window, invalid policies |
+| `EnsembleClassifierTest` | 6 | **Composite**: trust order within the tie margin, agreement bonus, broken member ignored, fallback |
+| `KeywordRuleClassifierTest`, `KnnClassifierTest`, `LlmClassifierTest` | 12 | each classifier, PII masking and prompt fencing, schema enums from the catalog, TC19 at classifier level |
+| `ResolutionAdvisorTest` | 4 | historical advice; **Decorator** adds the AI draft and falls back when AI is off or fails |
+| `RepeatSubmissionGuardTest` | 2 | TC22 |
+| `TextProcessingTest` | 5 | text normalisation, PII masker, vector maths |
+| `GeminiLlmClientTest` | 5 | the real adapter against a local HTTP server: key header, schema, fenced JSON, 429, blocked answers, unreachable host |
+| `LlmDecoratorsTest` | 5 | LRU cache, circuit breaker states, **Null Object** |
+| `JsonTest`, `EmbedderAndIndexTest` | 6 | JSON utility; lexical fallback embedder; vector index search and updates |
+| `TriageServiceImplTest` | 9 | the facade end to end: suggestion, Workflow 1b duplicate, resolved incidents leave the duplicate pool, TC19, TC22 |
+| `KnowledgeBaseServiceTest`, `JoinMergeServiceTest`, `TriageAdminServicesTest` | 15 | idempotent seeding, snapshot tracking, join/merge rules (TC29), settings validation, **new keyword with zero code change** |
+| `DuplicateEvaluationTest` | 3 | the 30 labelled pairs load; metric maths; the lexical fallback stays precise |
+| 🔁 `MiniLmDuplicateEvaluationTest` | 2 | real MiniLM model: F1 ≥ 0.80 at the calibrated threshold; the Workflow 1 demo pair is a likely duplicate with margin |
+| 🔁 `TriageApiIntegrationTest` | 7 | full Spring stack: preview, 401 / 400 / 403, admin status and evaluation, keyword add and remove |
+| 🔁 `AssignmentApiIntegrationTest` | 5 | live strategy switch, 400 for unknown strategy, 403 for non-admins, 409 for an unstaffed skill, validation |
+
+## Measured accuracy (for the Evaluation section of the report)
+
+Measured with all-MiniLM-L6-v2 (fp32 weights) on the repository's own data:
+
+| Measurement | Result |
+|---|---|
+| Duplicate detection, 30 labelled pairs, threshold 0.62 | precision 0.92, recall 1.00, **F1 0.96** (12 found, 1 false alarm, 0 missed) |
+| Best F1 over thresholds 0.40–0.90 | 0.96 for any threshold from 0.60 to 0.64 (0.62 sits in the middle) |
+| Category suggestion, leave-one-out on the 60-incident archive | kNN alone 72 %; **keywords + kNN ensemble 82 %** |
+| Service suggestion, same test | **87 %** |
+| Workflow 1 demo pair ("Fee payment app unavailable…" vs "Fee payment not going through…") | score 0.83 → likely duplicate |
+| A different problem on the same service ("Fee receipt download shows error 500") | score 0.55 → only "possibly related" |
+
+LangChain4j ships the quantized version of the model, so the numbers on your machines may differ
+slightly. `MiniLmDuplicateEvaluationTest` prints them, and the admin Settings page shows them live under
+**Measured accuracy**.
