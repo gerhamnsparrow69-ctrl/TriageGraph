@@ -52,6 +52,30 @@ app:
     push-enabled: true
     retry-attempts: 3
     retry-backoff: 500ms
+  # --- Member 2: triage (duplicate detection, classification, resolution suggestions) ---
+  triage:
+    embedder: minilm                  # minilm (in-process ONNX, falls back to lexical automatically) | lexical
+    likely-duplicate-threshold: 0.62  # calibrated on triage/duplicate-pairs.tsv (F1 0.96); admins can change it
+    possibly-related-threshold: 0.50
+    duplicate-window: 72h
+    repeat-window: 10m                # same reporter, near-identical text inside this window -> 409
+    repeat-similarity: 0.95
+    knn-neighbours: 5
+    min-confidence: 0.60
+    fallback-category: SOFTWARE
+    llm:
+      enabled: true                   # still off unless GEMINI_API_KEY is set
+      api-key: ${GEMINI_API_KEY:}
+      model: ${GEMINI_MODEL:gemini-flash-lite-latest}
+      base-url: https://generativelanguage.googleapis.com/v1beta
+      timeout: 8s
+      cache-size: 500
+      failure-threshold: 3
+      open-duration: 60s
+  # --- Member 2: assignment ---
+  assignment:
+    default-strategy: SMART           # SMART | SKILL_BASED | LOAD_BALANCED | ROUND_ROBIN
+    experience-cap: 5
 
 ---
 spring:
@@ -59,7 +83,7 @@ spring:
     activate:
       on-profile: test
   datasource:
-    url: jdbc:h2:mem:triagegraph;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    url: jdbc:h2:mem:triagegraph-${random.uuid};MODE=PostgreSQL;DB_CLOSE_DELAY=-1
     username: sa
     password: ""
   jpa:

@@ -1,0 +1,49 @@
+@startuml m2-workflow1-sequence
+title Workflow 1: employee reports → triage → prioritise → assign → notify
+skinparam shadowing false
+skinparam sequenceMessageAlign left
+autonumber
+actor "Employee\n(Dev)" as Dev
+participant "Report page\n(React)" as UI
+participant "TriageController" as TC
+participant "TriageServiceImpl\n(M2)" as TS
+participant "EnsembleClassifier\n(M2)" as EC
+participant "DuplicateDetector\n(M2)" as DD
+participant "IncidentLifecycleService\n(M1)" as LS
+participant "PriorityService\n(M1)" as PS
+participant "SlaService\n(M3)" as SLA
+participant "AssignmentServiceImpl\n(M2)" as AS
+participant "NotificationDispatcher\n(M4)" as ND
+
+Dev -> UI : types title and details
+UI -> TC : POST /api/v1/triage/preview (debounced 600 ms)
+TC -> TS : analyse(title, description)
+TS -> TS : embed text once (MiniLM, 384-d)
+TS -> EC : classifyAll(text, vector)
+EC --> TS : APPLICATION · Fee Payment App (0.99, kNN + keywords)
+TS -> DD : find(vector, service, now, policy)
+DD --> TS : likely duplicates (score ≥ 0.62), possibly related (≥ 0.50)
+TS --> UI : suggestion, votes, duplicate bands
+UI --> Dev : suggested category/service; banner if a likely duplicate exists
+
+alt Dev clicks "Yes, join INC-1024"
+  UI -> TC : POST /api/v1/triage/incidents/1024/join
+  TC -> LS : IncidentCommandPort.joinAsDuplicate(1024, dev)
+  note right of LS : affected users +1 → priority recalculated
+else Dev submits a new report
+  UI -> LS : POST /api/v1/incidents
+  LS -> TS : checkNotRepeatSubmission(reporter, text)
+  LS -> TS : classify(text) (or the user's choice)
+  LS -> PS : assess(impact, urgency, criticality, users, blast radius)
+  PS --> LS : P1 (score 83.2)
+  LS -> SLA : targetsFor(service, P1)
+  LS -> TS : index(incidentId, text)
+  LS -> AS : autoAssign(category, service, P1)
+  AS -> AS : skill → eligible (available, below max load)
+  AS -> AS : active strategy ranks (SMART)
+  AS --> LS : Sneha Reddy 0.715 ["APPLICATION skill", "load 1/6", "3 past fixes on Fee Payment App", ...]
+  LS -> ND : events after commit (IncidentReported, IncidentAssigned)
+  ND --> Dev : in-app + email acknowledgement
+  note over ND : assigned technician gets push + in-app
+end
+@enduml

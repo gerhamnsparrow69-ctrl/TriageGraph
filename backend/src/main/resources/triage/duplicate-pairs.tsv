@@ -1,0 +1,32 @@
+# Labelled incident pairs for evaluating duplicate detection (Member 2). label 1 = same underlying problem.
+textA	textB	sameService	label	kind
+Fee payment app unavailable. Students cannot complete fee transactions; the payment page fails to load.	UPI checkout failing on fee portal. Payment fails at the UPI step with an error, tried twice.	true	1	demo W1
+Unable to log in to campus SSO. Invalid credentials even with the right password.	SSO login not working. My password is correct but the login page keeps rejecting it.	true	1	paraphrase
+Hostel Wi-Fi down in Block 5. Phones see the network but get no IP address.	No internet in Block 5 hostel. Wi-Fi connects but there is no internet access.	true	1	paraphrase
+LMS course pages very slow. Pages take over a minute to load.	Moodle is extremely slow right now. Opening any course takes forever.	true	1	synonym (Moodle)
+ERP attendance page error 500. Cannot mark attendance.	Attendance module in ERP crashing. Faculty get an internal server error.	true	1	paraphrase
+Emails not syncing on phones. Webmail works.	Campus mail stopped updating on my mobile. Outlook app shows no new mail.	true	1	paraphrase
+Printer jam in library print room. Jams on every job.	Library printer keeps jamming. Paper gets stuck each time I print.	true	1	paraphrase
+Campus-wide internet outage. External sites time out.	Internet is down everywhere on campus. Google and YouTube not opening.	true	1	paraphrase
+Assignment upload fails on LMS for large PDFs.	Cannot submit assignment. Upload error when the file is about 15 MB.	true	1	paraphrase
+Phishing email asking for SSO password on a fake page.	Suspicious email asking me to verify my campus login password via a link.	true	1	paraphrase
+Lab PCs not booting. Black screen in the CS lab.	Computers in CS lab are dead. They do not turn on past a black screen.	true	1	paraphrase
+MATLAB licence error in labs. No licence available.	MATLAB will not open in the lab; it says licence checkout failed.	true	1	paraphrase
+Fee payment page not loading for students.	Fee receipt download shows error 500 after payment.	true	0	same service, different problem
+Unable to log in to campus SSO.	OTP not received for two-factor login on SSO.	true	0	same service, different problem
+Hostel Wi-Fi down in Block 5.	Very slow Wi-Fi in all hostels at night.	true	0	same service, different problem
+LMS course pages very slow.	Quiz submissions lost on LMS when pressing submit.	true	0	same service, different problem
+ERP attendance page error 500.	ERP shows the wrong timetable for my courses.	true	0	same service, different problem
+Outgoing emails bouncing with message rejected.	Mailbox full errors for faculty accounts.	true	0	same service, different problem
+Lab PCs not booting after power cut.	Python packages missing in the new lab image.	true	0	same service, different problem
+Payment gateway rejecting all transactions.	Students charged twice for the same fee payment.	true	0	same service, different problem
+Shared drive out of space.	Cloud sync client keeps asking for authentication.	true	0	same service, different problem
+Fee payment app unavailable.	Hostel Wi-Fi down in Block 5.	false	0	unrelated
+Unable to log in to campus SSO.	Printer jam in library print room.	false	0	unrelated
+LMS course pages very slow.	Database disk almost full.	false	0	unrelated
+Projector not working in lab 3.	Emails not syncing on phones.	false	0	unrelated
+Phishing email asking for password.	Library catalogue search returns nothing.	false	0	unrelated
+Campus-wide internet outage.	ERP report export never finishes.	false	0	unrelated
+MATLAB licence error in labs.	Payment gateway timeout after certificate expiry.	false	0	unrelated
+UPS alarm in the data centre.	Assignment upload fails on LMS.	false	0	unrelated
+Websites not resolving on campus.	Fee amount shown incorrectly in the payment app.	false	0	unrelated
