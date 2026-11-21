@@ -1,3 +1,4 @@
+import WorkloadPage from '../features/assignment/WorkloadPage'
 import { Link } from 'react-router'
 import { useAuth } from '../features/auth/AuthContext'
 import { MyIncidents } from '../features/search/MyIncidents'
@@ -21,11 +22,7 @@ export function EmployeeHome() {
   )
 }
 
+/** The technician's queue is Member 2's workload page (assigned incidents, most urgent first). */
 export function TechnicianHome() {
-  return (
-    <>
-      <PageHeader title="My queue" subtitle="Incidents assigned to you, most urgent first." />
-      <div className="rounded-lg bg-white ring-1 ring-slate-200 p-6 text-slate-500 text-sm">Nothing assigned right now.</div>
-    </>
-  )
+  return <WorkloadPage />
 }

@@ -1,0 +1,133 @@
+@startuml m2-triage-classes
+title Triage module (Member 2): classification, duplicate detection, resolution suggestions
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam nodesep 40
+skinparam ranksep 50
+skinparam class {
+  BackgroundColor #F5F3FF
+  BorderColor #7C3AED
+}
+hide empty members
+
+interface TriageService <<shared port>> {
+  +preview(TriageRequest): TriageResult
+  +classify(text): ClassificationSuggestion
+  +index(incidentId, text)
+  +checkNotRepeatSubmission(reporterId, text)
+  +similarResolved(incidentId, k)
+  +suggestResolution(incidentId, useAi)
+}
+
+class TriageServiceImpl <<Facade>> {
+  +analyse(title, description, serviceId, excludeId): Insight
+  +searchKnowledge(query, useAi)
+}
+class KnowledgeBaseService {
+  +addArchived(ArchivedIncident): boolean
+  +indexLive(incidentId, text): KnowledgeView
+  +applyStatus(incidentId, status, reason, at)
+  +rebuildIndex()
+}
+class TriageEventListener <<Observer>> {
+  +onReported(IncidentReported)
+  +onStatusChanged(IncidentStatusChanged)
+}
+class JoinMergeService {
+  +join(incidentId, userId)
+  +merge(childId, parentId, actorId)
+}
+
+interface IncidentClassifier {
+  +classify(TriageText): Optional<ClassificationCandidate>
+}
+class EnsembleClassifier <<Composite>> {
+  -minConfidence: double
+  -tieMargin: double
+  +classifyAll(TriageText): Result
+}
+class KeywordRuleClassifier
+class KnnClassifier {
+  -k: int
+}
+class LlmClassifier
+
+interface ResolutionAdvisor {
+  +advise(ResolutionQuery): ResolutionSuggestion
+}
+class HistoricalResolutionAdvisor
+class LlmResolutionAdvisor <<Decorator>>
+
+class DuplicateDetector {
+  +find(vector, service, now, policy, exclude): Report
+  +{static} combinedScore(cos, sameService, recency)
+}
+class RepeatSubmissionGuard {
+  +check(reporterId, vector, now, window, threshold)
+}
+class DuplicatePolicy <<record>> {
+  likelyThreshold = 0.62
+  possiblyThreshold = 0.50
+  window = 72 h
+}
+class TriageSettings <<entity>> {
+  -aiEnabled: boolean
+  +policy(): DuplicatePolicy
+}
+
+class KnowledgeDocument <<entity>> {
+  -incidentId: Long
+  -code: String
+  -status: IncidentStatus
+  -resolutionSummary: String
+  +recordResolution(summary, resolver, at)
+  +view(): KnowledgeView
+}
+class KnowledgeView <<record>> {
+  +isOpen(): boolean
+  +hasResolution(): boolean
+}
+interface VectorIndex {
+  +put(KnowledgeView, float[])
+  +nearest(query, k, filter): List<ScoredView>
+}
+interface TextEmbedder {
+  +embed(text): float[]
+}
+interface LlmClient {
+  +generateText(LlmPrompt)
+  +generateJson(LlmPrompt, schema)
+}
+
+TriageService <|.. TriageServiceImpl
+TriageServiceImpl --> EnsembleClassifier
+TriageServiceImpl --> DuplicateDetector
+TriageServiceImpl --> RepeatSubmissionGuard
+TriageServiceImpl --> ResolutionAdvisor
+TriageServiceImpl --> KnowledgeBaseService
+TriageServiceImpl --> TextEmbedder
+TriageEventListener --> KnowledgeBaseService
+KnowledgeBaseService "1" --> "*" KnowledgeDocument : persists
+KnowledgeBaseService --> VectorIndex : indexes
+
+IncidentClassifier <|.. EnsembleClassifier
+IncidentClassifier <|.. KeywordRuleClassifier
+IncidentClassifier <|.. KnnClassifier
+IncidentClassifier <|.. LlmClassifier
+EnsembleClassifier o-- "1..*" IncidentClassifier : members
+KnnClassifier --> VectorIndex
+LlmClassifier --> LlmClient
+
+ResolutionAdvisor <|.. HistoricalResolutionAdvisor
+ResolutionAdvisor <|.. LlmResolutionAdvisor
+LlmResolutionAdvisor o-- ResolutionAdvisor : wraps
+LlmResolutionAdvisor --> LlmClient
+HistoricalResolutionAdvisor --> VectorIndex
+
+DuplicateDetector --> VectorIndex
+DuplicateDetector ..> DuplicatePolicy
+RepeatSubmissionGuard --> VectorIndex
+TriageSettings *-- DuplicatePolicy
+KnowledgeDocument ..> KnowledgeView : creates
+VectorIndex o-- "*" KnowledgeView
+@enduml
