@@ -76,7 +76,7 @@ class SlaModuleTest {
     }
 
     @Test
-    void missingPriorityOrUnknownServiceUsesMissingConfigException() {
+    void missingPriorityIsConfigurationErrorAndUnknownServiceRemainsNotFound() {
         CatalogQuery catalog = mock(CatalogQuery.class);
         when(catalog.service(999)).thenThrow(new ServiceNotFoundException("missing"));
         DefaultSlaPolicyService policies = new DefaultSlaPolicyService(catalog);
@@ -84,7 +84,7 @@ class SlaModuleTest {
         assertThatThrownBy(() -> policies.targetsFor(100, null))
                 .isInstanceOf(SlaConfigurationMissingException.class);
         assertThatThrownBy(() -> policies.targetsFor(999, Priority.P1))
-                .isInstanceOf(SlaConfigurationMissingException.class);
+                .isInstanceOf(ServiceNotFoundException.class);
     }
 
     @Test
