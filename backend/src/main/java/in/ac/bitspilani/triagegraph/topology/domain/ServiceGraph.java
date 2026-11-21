@@ -69,10 +69,20 @@ public final class ServiceGraph implements DependencyGraph {
         return transitive(serviceId, dependencies);
     }
 
+    public Set<Long> directDependenciesOf(long serviceId) {
+        requireKnown(serviceId);
+        return dependencies.get(serviceId);
+    }
+
     @Override
     public Set<Long> dependentsOf(long serviceId) {
         requireKnown(serviceId);
         return transitive(serviceId, dependents);
+    }
+
+    public Set<Long> directDependentsOf(long serviceId) {
+        requireKnown(serviceId);
+        return dependents.get(serviceId);
     }
 
     @Override

@@ -10,7 +10,6 @@ import in.ac.bitspilani.triagegraph.shared.contracts.dto.SlaTargets;
 import in.ac.bitspilani.triagegraph.shared.contracts.enums.Priority;
 import in.ac.bitspilani.triagegraph.shared.contracts.ports.CatalogQuery;
 import in.ac.bitspilani.triagegraph.shared.contracts.ports.SlaService;
-import in.ac.bitspilani.triagegraph.shared.exception.ServiceNotFoundException;
 import in.ac.bitspilani.triagegraph.shared.exception.SlaConfigurationMissingException;
 
 @Service
@@ -50,15 +49,10 @@ public class DefaultSlaPolicyService implements SlaService {
             throw new SlaConfigurationMissingException("No default SLA policy applies to " + priority);
         }
 
-        try {
-            String serviceName = catalog.service(serviceId).name();
-            if (priority == Priority.P1 && "Fee Payment App".equals(serviceName)) {
-                return new SlaTargets(Duration.ofMinutes(3), Duration.ofMinutes(20),
-                        WARNING_PERCENT, "FEE_PAYMENT_APP_P1");
-            }
-        } catch (ServiceNotFoundException ex) {
-            throw new SlaConfigurationMissingException(
-                    "No SLA policy or service exists for service id " + serviceId, ex);
+        String serviceName = catalog.service(serviceId).name();
+        if (priority == Priority.P1 && "Fee Payment App".equals(serviceName)) {
+            return new SlaTargets(Duration.ofMinutes(3), Duration.ofMinutes(20),
+                    WARNING_PERCENT, "FEE_PAYMENT_APP_P1");
         }
 
         return defaults;
