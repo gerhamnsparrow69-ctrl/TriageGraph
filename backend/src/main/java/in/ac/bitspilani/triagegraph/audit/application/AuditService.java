@@ -5,15 +5,21 @@ import in.ac.bitspilani.triagegraph.audit.domain.AuditHasher;
 import in.ac.bitspilani.triagegraph.audit.domain.AuditRepository;
 import in.ac.bitspilani.triagegraph.shared.contracts.dto.IncidentSnapshot;
 import in.ac.bitspilani.triagegraph.shared.contracts.enums.Role;
+import in.ac.bitspilani.triagegraph.shared.contracts.dto.UserRef;
 import in.ac.bitspilani.triagegraph.shared.contracts.ports.IncidentQueryPort;
+import in.ac.bitspilani.triagegraph.shared.contracts.ports.UserDirectory;
 import in.ac.bitspilani.triagegraph.shared.exception.IncidentNotFoundException;
 import in.ac.bitspilani.triagegraph.shared.exception.InvalidInputException;
 import in.ac.bitspilani.triagegraph.shared.exception.UnauthorizedOperationException;
+import in.ac.bitspilani.triagegraph.shared.exception.UserNotFoundException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 /** Reads the audit trail: an incident's timeline, the admin listing, and chain verification. */
 @Service
@@ -26,10 +32,12 @@ public class AuditService {
 
     private final AuditRepository repository;
     private final IncidentQueryPort incidents;
+    private final UserDirectory users;
 
-    public AuditService(AuditRepository repository, IncidentQueryPort incidents) {
+    public AuditService(AuditRepository repository, IncidentQueryPort incidents, UserDirectory users) {
         this.repository = repository;
         this.incidents = incidents;
+        this.users = users;
     }
 
     /** The incident page's timeline, for anyone who may open the incident. */
@@ -43,7 +51,7 @@ public class AuditService {
         if (!allowed) {
             throw new UnauthorizedOperationException("You do not have access to " + incident.code() + ".");
         }
-        return repository.forIncident(incidentId).stream().map(AuditEntryView::of).toList();
+        return views(repository.forIncident(incidentId));
     }
 
     /** Newest first, for /admin/audit. */
@@ -51,7 +59,23 @@ public class AuditService {
         if (page < 0 || size < 1 || size > MAX_PAGE_SIZE) {
             throw new InvalidInputException("page must be ≥ 0 and size between 1 and " + MAX_PAGE_SIZE + ".");
         }
-        return repository.page(page, size).stream().map(AuditEntryView::of).toList();
+        return views(repository.page(page, size));
+    }
+
+    /** Adds actor display names, looking each user up once per response. */
+    private List<AuditEntryView> views(List<AuditEntry> entries) {
+        Map<Long, String> cache = new HashMap<>();
+        Function<Long, String> names = id -> id == null ? null : cache.computeIfAbsent(id, this::nameOf);
+        return entries.stream().map(e -> AuditEntryView.of(e, names)).toList();
+    }
+
+    private String nameOf(long userId) {
+        try {
+            UserRef ref = users.user(userId);
+            return ref == null || ref.name() == null || ref.name().isBlank() ? null : ref.name();
+        } catch (UserNotFoundException e) {
+            return null;
+        }
     }
 
     /**

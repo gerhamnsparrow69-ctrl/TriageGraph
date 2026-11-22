@@ -7,10 +7,13 @@ import in.ac.bitspilani.triagegraph.shared.contracts.dto.IncidentSnapshot;
 import in.ac.bitspilani.triagegraph.shared.contracts.enums.IncidentStatus;
 import in.ac.bitspilani.triagegraph.shared.contracts.enums.Priority;
 import in.ac.bitspilani.triagegraph.shared.contracts.enums.Role;
+import in.ac.bitspilani.triagegraph.shared.contracts.dto.UserRef;
 import in.ac.bitspilani.triagegraph.shared.contracts.ports.IncidentQueryPort;
+import in.ac.bitspilani.triagegraph.shared.contracts.ports.UserDirectory;
 import in.ac.bitspilani.triagegraph.shared.exception.IncidentNotFoundException;
 import in.ac.bitspilani.triagegraph.shared.exception.InvalidInputException;
 import in.ac.bitspilani.triagegraph.shared.exception.UnauthorizedOperationException;
+import in.ac.bitspilani.triagegraph.shared.exception.UserNotFoundException;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -21,6 +24,8 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AuditServiceTest {
@@ -30,7 +35,8 @@ class AuditServiceTest {
     final InMemoryAuditRepository repo = new InMemoryAuditRepository();
     final AuditChainWriter writer = new AuditChainWriter(repo);
     final IncidentQueryPort incidents = mock(IncidentQueryPort.class);
-    final AuditService service = new AuditService(repo, incidents);
+    final UserDirectory users = mock(UserDirectory.class);
+    final AuditService service = new AuditService(repo, incidents, users);
 
     @Test
     void anEmptyOrIntactChainVerifies() {
@@ -101,6 +107,28 @@ class AuditServiceTest {
 
         assertThat(service.recent(0, 2)).extracting(AuditEntryView::id).containsExactly(5L, 4L);
         assertThatThrownBy(() -> service.recent(0, 1000)).isInstanceOf(InvalidInputException.class);
+    }
+
+    @Test
+    void entriesCarryTheActorNameLookedUpOncePerResponse() {
+        when(users.user(5)).thenReturn(new UserRef(5, "Dev Sharma", Role.EMPLOYEE, "dev@campus", null));
+        write(3);
+        writer.append(new AuditDraft(T, null, null, AuditAction.NOTE_ADDED, 1L, "INC-1001", null, null, "system"));
+
+        assertThat(service.recent(0, 10)).extracting(AuditEntryView::actorName)
+                .containsExactly(null, "Dev Sharma", "Dev Sharma", "Dev Sharma");
+        verify(users, times(1)).user(5);
+    }
+
+    @Test
+    void anUnknownActorHasNoNameInsteadOfFailing() {
+        when(users.user(5)).thenThrow(new UserNotFoundException("No user with id 5"));
+        write(1);
+
+        assertThat(service.recent(0, 10)).singleElement().satisfies(e -> {
+            assertThat(e.actorId()).isEqualTo(5L);
+            assertThat(e.actorName()).isNull();
+        });
     }
 
     private void write(int n) {

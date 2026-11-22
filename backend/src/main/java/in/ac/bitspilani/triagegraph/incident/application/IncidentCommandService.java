@@ -94,23 +94,31 @@ public class IncidentCommandService implements IncidentCommandPort {
         }
     }
 
-    // SLA warnings, breaches and escalation are raised by the SLA module; recording them on the incident
-    // arrives with that integration. Logged so nothing is lost silently in the meantime.
+    // SLA warnings, breaches and escalation come from the SLA module's monitor (a system actor). The aggregate
+    // records them and raises SlaWarningRaised / SlaBreached / IncidentEscalated, published on save.
 
     @Override
     public void markSlaWarning(long incidentId, SlaKind kind) {
-        log.info("SLA {} warning for incident {} (not yet recorded on the incident)", kind, incidentId);
+        Incident incident = load(incidentId);
+        incident.markSlaWarning(kind, Instant.now(clock));
+        save(incident);
+        log.info("SLA {} warning recorded for {}", kind, incident.getCode());
     }
 
     @Override
     public void markSlaBreached(long incidentId, SlaKind kind) {
-        log.info("SLA {} breached for incident {} (not yet recorded on the incident)", kind, incidentId);
+        Incident incident = load(incidentId);
+        incident.markSlaBreached(kind, Instant.now(clock));
+        save(incident);
+        log.info("SLA {} breach recorded for {}", kind, incident.getCode());
     }
 
     @Override
     public void escalate(long incidentId, int level, long targetUserId, String reason) {
-        log.info("Escalation level {} for incident {} to user {}: {} (not yet recorded on the incident)",
-                level, incidentId, targetUserId, reason);
+        Incident incident = load(incidentId);
+        incident.escalate(level, targetUserId, reason, Instant.now(clock));
+        save(incident);
+        log.info("{} escalated to level {} (user {})", incident.getCode(), level, targetUserId);
     }
 
     private Incident load(long id) {
