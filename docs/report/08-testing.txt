@@ -121,6 +121,20 @@ backend/target/surefire-reports.
     TopologyControllerTest                         7      topology HTTP contract: graph, direct and
                                                           transitive dependencies and dependents,
                                                           blast radius, unknown service 404, roles
+    JGraphTGraphBuilderTest                        9      the dependency graph: direct and
+                                                          transitive dependencies and dependents,
+                                                          diamonds counted once, duplicate edges,
+                                                          self-loops and cycles rejected with
+                                                          CyclicDependencyException (TC21), dangling
+                                                          edges and unknown services rejected
+    GraphRegistryTest                              4      graph reload: lazy start, a failed reload
+                                                          keeps the previous graph, a catalogue
+                                                          change reloads it, readers never see a
+                                                          half-built graph
+    CatalogSeederTest                              3      Appendix A services and categories seeded
+                                                          once; unknown category is not found
+    CatalogGraphSourceTest                         2      graph built from the seeded catalogue;
+                                                          expected blast radius
     SlaModuleTest                                  9      default P1 to P4 targets and the Fee Payment
                                                           App P1 override; warning and deadline
                                                           boundaries (TC09, TC10); pause and resume
@@ -137,7 +151,7 @@ backend/target/surefire-reports.
                                                           only the resolution clock (TC28), warning
                                                           before breach, recorded decisions are not
                                                           repeated, threshold validation (PR #13)
-    RcaControllerTest                              5      RCA endpoint, role authorisation, input
+    RcaControllerTest                              6      RCA endpoint, role authorisation, input
                                                           validation, empty and unknown service
     CoverageSpecificityRankerTest                  5      ranker: empty and invalid input, unknown
                                                           services, snapshots, name fallbacks
@@ -158,8 +172,8 @@ backend/target/surefire-reports.
                                                           excluded; RCA works without the optional
                                                           incident port
 
-    The class counts above are declared test methods; parameterised tests expand into more executions,
-    so the Surefire total (123 executions) is the definitive figure.
+    The counts are Surefire executions (SlaEvaluatorTest has parameterised tests, so its 15 methods
+    run 32 times). The 20 classes add up to 123.
 
   Member 4: config, identity, notification, reporting, seed (110 tests)
 
@@ -289,18 +303,21 @@ threshold slider.
 
 8.6 Known limits of the test suite
 
-  - SLA live monitoring is not wired (Member 3): the SLA evaluator returns decisions, but the live
-    monitor that persists warnings and breaches and publishes the events is future work. TC09, TC10,
-    TC28 and TC31 are therefore only partly covered: the evaluator and the incident-level escalation
-    are tested, but there is no end-to-end test of the monitor.
+  - SLA escalation is not wired end to end (Member 3): the live monitor (SlaMonitor, every 30
+    seconds) saves warnings and breaches and publishes SlaWarningRaised and SlaBreached, which
+    notifications, the Command Centre feed and the audit trail receive. It does not yet record
+    them on the incident or escalate it, and the standalone SlaEvaluator is not used by the
+    monitor. TC31 is therefore only partly covered: the incident-level escalation is tested on
+    its own, but nothing triggers it. There is no end-to-end test from monitor tick to
+    notification.
   - TC18 (missing SLA policy) is not covered as written: the provider always supplies defaults for
     P1 to P4, so a missing P2 policy cannot occur; the tests cover a null priority and an unknown
     service instead.
-  - TC21 (dependency cycle) is not covered: the delivered topology API is read-only, so there is no
-    request that creates a dependency to test.
+  - TC21 (dependency cycle) is covered at graph level only: the graph builder rejects
+    self-loops and cycles with CyclicDependencyException (mapped to 422), but the delivered
+    topology API is read-only, so no HTTP request can add a dependency.
   - TC30 covers the root-cause ranking (Campus SSO first, about 0.783). Creating a Major Incident
     with three child incidents is not part of the delivered RCA.
-
   - Gemini is only tested through a local test server and the failure paths (timeouts, 429, invalid
     JSON). We do not call the real Gemini service in tests, so no test depends on the network or an API
     key.
