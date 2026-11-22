@@ -1,0 +1,44 @@
+@startuml m1-incident-lifecycle
+title Incident lifecycle (Member 1): IncidentStatus transitions
+skinparam shadowing false
+skinparam state {
+  BackgroundColor #EFF6FF
+  BorderColor #2563EB
+}
+
+[*] --> NEW : IncidentFactory.create()\n[IncidentReported]
+
+NEW --> CLASSIFIED : classify()\n[system, or any non-employee]
+NEW --> MERGED : mergeInto(parent)
+
+CLASSIFIED --> ASSIGNED : assignTo()\n[system, team lead, admin, IT manager]\n[IncidentAssigned]
+CLASSIFIED --> MERGED : mergeInto(parent)
+CLASSIFIED : applyPriority(), startSla()
+CLASSIFIED : flagAwaitingAssignment() when nobody is free
+
+ASSIGNED --> ACKNOWLEDGED : acknowledge()\n[assignee]\n/ sla.markResponded()
+ASSIGNED --> ASSIGNED : assignTo() (reassign)
+
+ACKNOWLEDGED --> IN_PROGRESS : startWork()\n[assignee]
+ACKNOWLEDGED --> ASSIGNED : assignTo() (reassign)
+
+IN_PROGRESS --> PENDING_INFO : requestInfo(question)\n[assignee]\n/ sla.pause()
+IN_PROGRESS --> RESOLVED : resolve(summary, rootCause)\n[assignee]\n/ sla.pause()
+
+PENDING_INFO --> IN_PROGRESS : provideInfo(answer)\n[reporter]\n/ sla.resume()
+PENDING_INFO : SLA clock paused
+
+RESOLVED --> VERIFIED : verify()\n[reporter or system]
+RESOLVED --> IN_PROGRESS : reopen(reason)\n[reporter]\n/ discardResolution(), sla.resume()
+RESOLVED : SLA clock paused
+
+VERIFIED --> CLOSED : close()\n[assignee, team lead, admin,\nIT manager or system]
+
+CLOSED : terminal; submitFeedback() once [reporter]
+MERGED : terminal; duplicateOfId = parent
+
+CLOSED --> [*]
+MERGED --> [*]
+
+note "Any action not on an arrow → 409 InvalidStateTransitionException; state unchanged.\nWhile open: addNote(), joinAsAffected(), markSlaWarning(), markSlaBreached(), escalate()\nchange no status. On CLOSED or MERGED they are rejected (409); submitFeedback() is the\nonly action allowed on CLOSED." as N1
+@enduml

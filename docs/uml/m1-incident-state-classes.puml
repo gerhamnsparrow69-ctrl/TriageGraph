@@ -1,0 +1,119 @@
+@startuml m1-incident-state-classes
+title Incident lifecycle (Member 1): State pattern, one singleton per IncidentStatus
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam class {
+  BackgroundColor #EFF6FF
+  BorderColor #2563EB
+}
+hide empty members
+
+package "incident.domain" {
+  class Incident {
+    -status: IncidentStatus
+    -state(): IncidentState
+    .. state hooks (re-check allowedNext) ..
+    +requirePermitted(IncidentAction, Actor)
+    +transitionTo(IncidentStatus, Actor, Instant, reason)
+    +changeAssignee(technicianId, strategyKey, Actor, Instant)
+    +recordClassification(categoryCode, serviceId, ClassificationInfo)
+    +recordResolution(summary, rootCause, Actor, Instant)
+    +discardResolution()
+    +recordClosure(Actor, Instant)
+    +recordFeedback(rating, comment, Actor, Instant)
+    +linkAsDuplicateOf(Incident, Actor, Instant)
+    +appendNote(text, internal, Actor, Instant): InvestigationNote
+    +sla(): SlaDeadlines
+  }
+}
+
+package "incident.domain.state" {
+  abstract class IncidentState <<State>> {
+    +{abstract} status(): IncidentStatus
+    +{abstract} allowedNext(): Set<IncidentStatus>
+    +{abstract} allowedActions(): Set<IncidentAction>
+    +isTerminal(): boolean
+    .. every action rejects by default (409) ..
+    +classify(Incident, categoryCode, serviceId, ClassificationInfo, Actor, Instant)
+    +assign(Incident, technicianId, strategyKey, Actor, Instant)
+    +acknowledge(Incident, Actor, Instant)
+    +startWork(Incident, Actor, Instant)
+    +requestInfo(Incident, question, Actor, Instant)
+    +provideInfo(Incident, answer, Actor, Instant)
+    +resolve(Incident, summary, rootCause, Actor, Instant)
+    +verify(Incident, Actor, Instant)
+    +reopen(Incident, reason, Actor, Instant)
+    +close(Incident, Actor, Instant)
+    +mergeInto(Incident, Incident, Actor, Instant)
+    +submitFeedback(Incident, rating, comment, Actor, Instant)
+    #doMerge(Incident, Incident, Actor, Instant) {final}
+    #doReassign(Incident, technicianId, strategyKey, Actor, Instant) {final}
+    #reject(IncidentAction) {final}
+  }
+
+  class IncidentStateRegistry <<Registry>> {
+    -{static} STATES: EnumMap<IncidentStatus, IncidentState>
+    +{static} of(IncidentStatus): IncidentState
+  }
+
+  class NewState {
+    +classify(...)
+    +mergeInto(...)
+  }
+  class ClassifiedState {
+    +assign(...)
+    +mergeInto(...)
+  }
+  class AssignedState {
+    +acknowledge(...)
+    +assign(...)
+  }
+  class AcknowledgedState {
+    +startWork(...)
+    +assign(...)
+  }
+  class InProgressState {
+    +requestInfo(...)
+    +resolve(...)
+  }
+  class PendingInfoState {
+    +provideInfo(...)
+  }
+  class ResolvedState {
+    +verify(...)
+    +reopen(...)
+  }
+  class VerifiedState {
+    +close(...)
+  }
+  class ClosedState {
+    +isTerminal(): true
+    +submitFeedback(...)
+  }
+  class MergedState {
+    +isTerminal(): true
+  }
+}
+
+IncidentState <|-- NewState
+IncidentState <|-- ClassifiedState
+IncidentState <|-- AssignedState
+IncidentState <|-- AcknowledgedState
+IncidentState <|-- InProgressState
+IncidentState <|-- PendingInfoState
+IncidentState <|-- ResolvedState
+IncidentState <|-- VerifiedState
+IncidentState <|-- ClosedState
+IncidentState <|-- MergedState
+
+IncidentStateRegistry o--> "10" IncidentState : singletons
+Incident ..> IncidentStateRegistry : of(status)
+IncidentState ..> Incident : calls state hooks
+
+note right of IncidentState
+  Order inside an allowed action:
+  1. state check   → 409 InvalidStateTransitionException
+  2. who is asking → 403 UnauthorizedOperationException
+  3. input         → 400 InvalidInputException
+end note
+@enduml

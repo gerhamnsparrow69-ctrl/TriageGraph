@@ -1,0 +1,111 @@
+10. ALGORITHMS AND INTELLIGENT FEATURES
+
+10.1 Priority (Member 1)
+
+Section 10 collects the core algorithms. This part covers priority; duplicate detection,
+classification, suggested resolutions and assignment are in Member 2's part
+(m2-intelligent-features.txt), and SLA, escalation and root-cause ranking in Member 3's.
+
+10.1.1 Where priority is decided
+
+PriorityServiceImpl implements the shared PriorityService port. It asks the active
+PriorityCalculator for a score and a band, then applies guard rules that hold whichever calculator
+is active. Calculators are kept in PriorityCalculatorRegistry by key; WeightedScorePriorityCalculator
+(key WEIGHTED_SCORE) is the default and the only one shipped in this version.
+
+The incident module calls it twice: when an incident is classified during report(), and again
+whenever someone joins the incident as an affected user (IncidentCommandService.joinAsDuplicate),
+because the affected-user count has changed (BR-P3).
+
+
+10.1.2 The weighted score (BR-P1)
+
+  Factor                      Values
+  --------------------------  ---------------------------------------------------------------
+  Impact I                    1 Minor · 2 Moderate · 3 Significant · 4 Extensive
+  Urgency U                   1 Low · 2 Medium · 3 High · 4 Critical
+  Service criticality C       1 Low · 2 Medium · 3 High · 4 Mission-critical (from the catalog)
+  Affected-users multiplier   1.00 below 10 · 1.10 from 10 · 1.20 from 50 · 1.30 from 200
+  Blast-radius multiplier     min(1 + 0.03 × D, 1.25), D = number of services that depend on
+                              this one (from the topology module's BlastRadiusProvider)
+
+  score = round1( I × U × C × usersMultiplier × blastMultiplier )
+
+  P1 if score >= 40.0 · P2 if >= 20.0 · P3 if >= 8.0 · otherwise P4
+
+The score is rounded to one decimal before it is banded, so the number shown to the user always
+agrees with the band: a displayed 40.0 is always P1 and a displayed 39.9 is always P2.
+
+Why multiply: impact, urgency and criticality are independent questions (how bad, how soon, how
+important is the service), and a problem that scores high on all three should stand out much more
+than one that is high on only one. The two multipliers then adjust for scale without letting either
+dominate: the users multiplier adds at most 30%, and the blast radius is capped at 25%.
+
+Every assessment carries a rationale that lists every factor, shown to staff on the incident page
+and written to the audit trail:
+
+  Impact 4 (EXTENSIVE) × Urgency 4 (CRITICAL) × Criticality 4 (MISSION_CRITICAL) × users 1.30 (300
+  affected) × blast 1.00 (0 dependents) = 83.2 → P1
+
+Code (WeightedScorePriorityCalculator):
+
+  double score = round1(i * u * c * mUsers * mBlast);
+  Priority priority = bandFor(score);
+
+  static double usersMultiplier(int affectedUsers) {
+      if (affectedUsers >= 200) return 1.30;
+      if (affectedUsers >= 50) return 1.20;
+      if (affectedUsers >= 10) return 1.10;
+      return 1.00;
+  }
+
+  static double blastMultiplier(int dependents) {
+      return Math.min(1.0 + BLAST_STEP * dependents, BLAST_CAP);      // 0.03, 1.25
+  }
+
+
+10.1.3 Worked examples
+
+  Incident                              I × U × C   Users  Dependents  Score  Priority
+  ------------------------------------  ----------  -----  ----------  -----  --------
+  Fee payment app down                  4 × 4 × 4   300    0           83.2   P1
+  Campus SSO login failures             4 × 4 × 4   500    8           103.2  P1
+  Hostel Wi-Fi down in Block 5          3 × 3 × 3   80     0           32.4   P2
+  ERP report export slow (one dept.)    2 × 2 × 3   15     0           13.2   P3
+  Lab printer jam                       1 × 2 × 1   3      0           2.0    P4
+
+For example, the fee payment outage: 4 × 4 × 4 = 64; 300 users gives × 1.30 = 83.2; no dependent
+services gives × 1.00; 83.2 is at least 40, so P1. For SSO, eight dependent services give a blast
+multiplier of 1 + 0.03 × 8 = 1.24, and 64 × 1.30 × 1.24 = 103.17, shown as 103.2.
+
+Joining raises priority: an incident reported with 9 affected users moves from the 1.00 to the 1.10
+multiplier when the tenth person joins, and a score just under a threshold can cross into the next
+band (for example P2 to P1). The new priority is recorded as another PriorityAssigned event.
+
+
+10.1.4 Guard rules (BR-P2)
+
+  - A SECURITY incident with impact Significant or higher is at least P2. The guard only raises a
+    priority, never lowers it, and applies whichever calculator is active.
+  - "A Major Incident is always P1" belongs to the MajorIncident aggregate, which is not built in
+    this version.
+
+
+10.1.5 Tests
+
+  - TC02: the fee payment example gives 83.2, P1, and the rationale lists every factor.
+  - TC07: band boundaries 40.0 / 39.9, 20.0 / 19.9 and 8.0 / 7.9, plus real inputs that score
+    exactly 40.0 (P1) and 39.6 (P2).
+  - TC08: the users multiplier changes exactly at 10, 50 and 200, and the change flows into the
+    score.
+  - All five worked examples above, the blast-radius cap, the security floor and the registry rules.
+  Code: priority/domain/WeightedScorePriorityCalculatorTest (35 tests),
+  priority/application/PriorityServiceImplTest, PriorityCalculatorRegistryTest.
+
+
+10.1.6 Limitations
+
+  - Only the weighted score ships. The registry can hold more calculators (an ITIL-style matrix
+    calculator was planned), but there is no runtime switch in this version.
+  - The thresholds are constants in the calculator. Making them editable by an administrator would
+    need a settings table.

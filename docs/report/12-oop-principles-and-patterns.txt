@@ -1,0 +1,187 @@
+12. OOP PRINCIPLES AND DESIGN PATTERNS
+
+This section maps the four pillars, the SOLID principles and the design patterns to the classes that
+show them. Examples are from Member 1's modules (incident, priority, audit) unless another module is
+named; the other members' patterns are described in their own sections.
+
+
+12.1 The four pillars
+
+Encapsulation
+  Incident has no public setters for status, priority or assignee. Fields are private and changed
+  only by intention-revealing methods that check the rules first. Collections are returned
+  read-only.
+
+    public List<InvestigationNote> getNotes() {
+        return Collections.unmodifiableList(notes);
+    }
+
+  The audit hash arithmetic is hidden in AuditHasher, and the SLA time arithmetic (pause, resume,
+  moving the deadline) in SlaDeadlines.
+
+Abstraction
+  Other modules see the incident only as two interfaces (IncidentCommandPort, IncidentQueryPort) and
+  an immutable IncidentSnapshot record. IncidentState and PriorityCalculator are abstractions with
+  several possible implementations; controllers see only application services.
+
+Inheritance
+  Used only for genuine is-a relationships. The ten lifecycle states extend IncidentState and
+  inherit its "reject by default" behaviour; the exception tree extends ItsmException (for example
+  InvalidStateTransitionException and UnauthorizedOperationException); in identity, the user
+  hierarchy (Member 4). Categories are not subclasses: they differ by data, not behaviour, so they
+  are rows an administrator can add.
+
+Polymorphism
+  The same call does different things depending on the object:
+
+    public void resolve(String summary, String rootCause, Actor by, Instant now) {
+        state().resolve(this, summary, rootCause, by, now);      // Incident
+    }
+
+  In IN_PROGRESS this records the resolution and moves to RESOLVED; in every other state the
+  inherited method rejects it. The audit listener uses a pattern-matching switch over the sealed
+  event hierarchy, so the compiler insists that every event type is handled:
+
+    return switch (event) {
+        case IncidentReported e -> incident(e.incidentId(), e.incidentCode(), e, AuditAction.CREATED, ...);
+        case IncidentStatusChanged e -> incident(..., actionFor(e), e.from(), e.to(), e.reason());
+        case PriorityAssigned e -> incident(..., AuditAction.PRIORITY_SET, ...);
+        // ... one case per event type, no default branch
+    };
+
+
+12.2 SOLID
+
+  Principle              Where
+  ---------------------  -------------------------------------------------------------------------
+  Single responsibility  IncidentController handles HTTP; IncidentLifecycleService loads, acts,
+                         saves and publishes; Incident holds the rules; each state class covers one
+                         status; PriorityCalculator only scores; AuditTrailListener only records;
+                         AuditChainWriter is the only class that writes the chain
+  Open/closed            A new priority calculator is one new PriorityCalculator bean, picked up by
+                         the registry with no existing code edited. A new event type is one new
+                         record in the sealed hierarchy, and the compiler lists every switch that
+                         must handle it
+  Liskov substitution    Any IncidentState can stand in for another. IncidentStateTransitionTest runs
+                         the same checks for every (status, action) pair: 130 cases
+  Interface segregation  IncidentQueryPort (read) is separate from IncidentCommandPort (write), so
+                         a module that only reads cannot change incidents. AuditRepository has
+                         append and reads but no update or delete, checked by ArchitectureTest
+  Dependency inversion   IncidentRepository is defined in the domain and implemented in
+                         infrastructure. IncidentLifecycleService depends on port interfaces
+                         (TriageService, AssignmentService, SlaService, ...), never on other
+                         modules' classes. Clock is injected, so tests fix the time
+
+
+12.3 Design patterns
+
+The brief asks for at least two patterns. Member 1's modules use eight; the table lists where each
+lives and why.
+
+  Pattern      Classes                                       Why it is used here
+  -----------  --------------------------------------------  ------------------------------------
+  State        IncidentState, NewState ... MergedState,      Ten statuses and twelve lifecycle
+               IncidentStateRegistry                         methods; one class per status keeps
+                                                             each row of the transition table in
+                                                             one place, with no if/else on status
+  Builder      Incident.Builder                              Seven creation inputs; build()
+                                                             validates and always starts in NEW
+  Factory      IncidentFactory                               One place that turns a report into
+                                                             an incident, stamped with the
+                                                             injected Clock
+  Facade       IncidentLifecycleService                      One entry point per use case over the
+                                                             factory, repository and seven ports
+  Repository   IncidentRepository / JpaIncidentRepository,   Domain code asks for incidents and
+               AuditRepository / JpaAuditRepository          entries, not SQL
+  Observer     DomainEventPublisher, AuditTrailListener      The incident does not know who
+               (and Member 4's NotificationDispatcher)       listens; audit and notifications are
+                                                             added without changing it
+  Strategy     PriorityCalculator,                           The scoring rule can be replaced
+               WeightedScorePriorityCalculator               without touching its callers
+  Registry     PriorityCalculatorRegistry,                   Select a calculator or state by key;
+               IncidentStateRegistry                         fail fast on duplicates or gaps
+
+Trackable is prepared for the Composite pattern (a MajorIncident that groups incidents and is
+tracked like one), but only Incident implements it in this version.
+
+
+12.3.1 State: one state class
+
+    final class AssignedState extends IncidentState {
+        ...
+        @Override
+        public void acknowledge(Incident i, Actor by, Instant now) {
+            i.requirePermitted(IncidentAction.ACKNOWLEDGE, by);       // 403 unless the assignee
+            i.sla().markResponded(now);                               // response SLA met
+            i.transitionTo(ACKNOWLEDGED, by, now, "Technician acknowledged");
+        }
+
+        @Override
+        public void assign(Incident i, long technicianId, String strategyKey, Actor by, Instant now) {
+            doReassign(i, technicianId, strategyKey, by, now);
+        }
+    }
+
+Every other action is inherited from IncidentState, where it throws
+InvalidStateTransitionException ("Cannot resolve an incident that is ASSIGNED. Allowed now:
+assign, acknowledge.").
+
+
+12.3.2 Registry: status to state in an EnumMap
+
+    private static final Map<IncidentStatus, IncidentState> STATES = new EnumMap<>(IncidentStatus.class);
+
+    static {
+        List.of(new NewState(), new ClassifiedState(), new AssignedState(), new AcknowledgedState(),
+                        new InProgressState(), new PendingInfoState(), new ResolvedState(), new VerifiedState(),
+                        new ClosedState(), new MergedState())
+                .forEach(s -> STATES.put(s.status(), s));
+        if (STATES.size() != IncidentStatus.values().length) {
+            throw new IllegalStateException("Every IncidentStatus needs an IncidentState");
+        }
+    }
+
+
+12.3.3 Builder and Factory
+
+    return Incident.builder()                                         // IncidentFactory.create
+            .title(cmd.title())
+            .description(cmd.description())
+            .reporterId(reporterId)
+            .impact(cmd.impact())
+            .urgency(cmd.urgency())
+            .affectedUsers(cmd.affectedUsers())
+            .createdAt(createdAt)
+            .build();                                                 // validates; always NEW
+
+
+12.3.4 Strategy: the priority calculator
+
+    public interface PriorityCalculator {
+        String key();
+        String description();
+        PriorityAssessment calculate(PriorityInput input);
+    }
+
+PriorityServiceImpl calls registry.active().calculate(input) and then applies the guard rules, so
+the rules hold for any calculator (section 10.1.4).
+
+
+12.4 Collections and data structures
+
+  Structure                                   Used for                            Why
+  ------------------------------------------  ----------------------------------  ------------------------
+  EnumMap<IncidentStatus, IncidentState>      state registry                      constant-time, type-safe
+                                                                                  lookup with no if/else
+  EnumSet<IncidentStatus>, EnumSet<IncidentAction>
+                                              allowed next statuses and actions   compact, fast membership
+                                              per state                           checks; drive the UI
+                                                                                  buttons
+  Set<Long> (@ElementCollection)              followers of an incident            no duplicates; a joiner
+                                                                                  is added once
+  List<Function<Incident, IncidentEvent>>     pending events                      events are built after
+                                                                                  saving, with the real id
+  HashMap<Long, String>                       display names in one response       each user looked up once
+  AtomicReference<String>                     active priority calculator key      thread-safe switch
+  ReentrantLock (fair)                        audit chain writer                  one writer at a time, in
+                                                                                  arrival order

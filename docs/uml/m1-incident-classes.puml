@@ -1,0 +1,149 @@
+@startuml m1-incident-classes
+title Incident domain model (Member 1): the aggregate root and its parts
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam class {
+  BackgroundColor #EFF6FF
+  BorderColor #2563EB
+}
+hide empty members
+
+package "shared.contracts" #EEF2FF {
+  interface IncidentEvent <<sealed>>
+  class IncidentSnapshot <<record>>
+}
+
+package "incident.domain" {
+  interface Trackable <<Composite>> {
+    +getId(): Long
+    +getCode(): String
+    +getStatus(): IncidentStatus
+    +getPriority(): Priority
+  }
+
+  class Incident <<aggregate root>> <<@Entity>> {
+    +{static} MAX_TITLE = 200
+    +{static} MAX_DESCRIPTION = 4000
+    -id: Long
+    -version: long
+    -title, description: String
+    -reporterId: Long
+    -followerIds: Set<Long>
+    -categoryCode: String
+    -serviceId: Long
+    -impact: Impact
+    -urgency: Urgency
+    -affectedUsers: int
+    -priority: Priority
+    -priorityScore: Double
+    -status: IncidentStatus
+    -assigneeId: Long
+    -escalationLevel: int
+    -reopenCount: int
+    -duplicateOfId: Long
+    -pendingEvents: List<Function<Incident, IncidentEvent>> {transient}
+    --
+    +{static} builder(): Builder
+    .. lifecycle (delegates to IncidentState) ..
+    +classify(categoryCode, serviceId, ClassificationInfo, Actor, Instant)
+    +assignTo(technicianId, strategyKey, Actor, Instant)
+    +acknowledge(Actor, Instant)
+    +startWork(Actor, Instant)
+    +requestInfo(question, Actor, Instant)
+    +provideInfo(answer, Actor, Instant)
+    +resolve(summary, rootCause, Actor, Instant)
+    +verify(Actor, Instant)
+    +reopen(reason, Actor, Instant)
+    +close(Actor, Instant)
+    +mergeInto(Incident, Actor, Instant)
+    +submitFeedback(rating, comment, Actor, Instant)
+    .. other behaviour ..
+    +applyPriority(PriorityAssessment, Actor, Instant)
+    +startSla(SlaTargets, Instant)
+    +addNote(text, internal, Actor, Instant): InvestigationNote
+    +joinAsAffected(userId, Actor, Instant): boolean
+    +markSlaWarning(SlaKind, Instant)
+    +markSlaBreached(SlaKind, Instant)
+    +escalate(level, targetUserId, reason, Instant)
+    +dueAt(SlaKind): Instant
+    .. permissions ..
+    +canBeViewedBy(Actor): boolean
+    +permits(IncidentAction, Actor): boolean
+    +allowedActions(Actor): Set<IncidentAction>
+    +allowedNext(): Set<IncidentStatus>
+    .. events ..
+    +pullEvents(): List<IncidentEvent>
+    +toSnapshot(): IncidentSnapshot
+  }
+
+  class "Incident.Builder" as Builder <<Builder>> {
+    +title(String): Builder
+    +description(String): Builder
+    +reporterId(long): Builder
+    +impact(Impact): Builder
+    +urgency(Urgency): Builder
+    +affectedUsers(int): Builder
+    +createdAt(Instant): Builder
+    +build(): Incident
+  }
+
+  class SlaDeadlines <<@Embeddable>> {
+    -policyName: String
+    -responseDueAt: Instant
+    -resolutionDueAt: Instant
+    -respondedAt: Instant
+    -pausedAt: Instant
+    +markResponded(Instant)
+    +pause(Instant)
+    +resume(Instant)
+    +isPaused(): boolean
+  }
+  class ClassificationInfo <<@Embeddable>> {
+    source, confidence, explanation
+  }
+  class Resolution <<@Embeddable>> {
+    summary, rootCause, resolvedAt, resolvedById
+  }
+  class Closure <<@Embeddable>> {
+    closedAt, closedById
+  }
+  class Feedback <<@Embeddable>> {
+    rating, comment, submittedAt
+  }
+  class InvestigationNote <<@Entity>> {
+    +{static} MAX_LENGTH = 2000
+    id, text, authorId, internal, createdAt
+  }
+  class Actor <<record>> {
+    id: Long
+    role: Role
+    +{static} system(): Actor
+    +{static} of(id, Role): Actor
+    +isSystem(): boolean
+    +hasAnyRole(Role...): boolean
+  }
+  interface IncidentRepository <<Repository>> {
+    +save(Incident): Incident
+    +findById(id): Optional<Incident>
+    +findOpenCreatedSince(Instant): List<Incident>
+    +findOpenWithDeadlineBefore(Instant): List<Incident>
+  }
+  abstract class IncidentState <<State>>
+  note bottom of IncidentState : see m1-incident-state-classes
+}
+
+Trackable <|.. Incident
+Incident +-- Builder
+Builder ..> Incident : builds (always NEW)
+Incident *-- "1" SlaDeadlines
+Incident *-- "0..1" ClassificationInfo
+Incident *-- "0..1" Resolution
+Incident *-- "0..1" Closure
+Incident *-- "0..1" Feedback
+Incident *-- "*" InvestigationNote
+Incident --> IncidentState : state() via IncidentStateRegistry
+Incident ..> Actor
+Incident ..> IncidentEvent : raises
+Incident ..> IncidentSnapshot : toSnapshot()
+IncidentRepository ..> Incident
+@enduml
