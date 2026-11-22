@@ -127,8 +127,7 @@ Lifecycle
   BR-L4  ACKNOWLEDGED can be started (to IN_PROGRESS) by the assignee, or reassigned.
   BR-L5  IN_PROGRESS can ask the reporter for information (to PENDING_INFO) or be resolved.
   BR-L6  PENDING_INFO returns to IN_PROGRESS when the reporter replies.
-  BR-L7  RESOLVED can be verified by the reporter (to VERIFIED) or reopened with a reason. It is
-         verified automatically after 72 hours.
+  BR-L7  RESOLVED can be verified by the reporter (to VERIFIED) or reopened with a reason.
   BR-L8  VERIFIED can be closed. CLOSED and MERGED are final; only feedback on a CLOSED incident is
          allowed afterwards. Any other action raises InvalidStateTransitionException.
 
