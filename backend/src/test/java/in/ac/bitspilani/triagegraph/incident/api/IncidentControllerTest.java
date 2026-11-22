@@ -2,6 +2,7 @@ package in.ac.bitspilani.triagegraph.incident.api;
 
 import com.jayway.jsonpath.JsonPath;
 import in.ac.bitspilani.triagegraph.identity.application.NewUser;
+import in.ac.bitspilani.triagegraph.incident.domain.Incident;
 import in.ac.bitspilani.triagegraph.identity.application.UserAdminService;
 import in.ac.bitspilani.triagegraph.shared.contracts.enums.Role;
 import org.junit.jupiter.api.BeforeEach;
@@ -162,6 +163,36 @@ class IncidentControllerTest {
         perform(get("/api/v1/incidents/999999"), dev, Role.EMPLOYEE)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.errorCode").value("INCIDENT_NOT_FOUND"));
+    }
+
+    /**
+     * TC13 over HTTP: a 4001-character description and impact = 7 are both rejected with a 400 ProblemDetail
+     * (the blank description is in invalidReportsAre400AndUnknownIncidents404). Bean Validation lists the
+     * description as a field error; an impact outside the enum cannot be read at all, so it is a 400 without
+     * field errors.
+     */
+    @Test
+    void tc13TooLongDescriptionAndUnknownImpactAre400() throws Exception {
+        String tooLong = "x".repeat(Incident.MAX_DESCRIPTION + 1);
+        perform(post("/api/v1/incidents").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"title\":\"Fee payment app unavailable\",\"description\":\"" + tooLong
+                        + "\",\"impact\":\"MINOR\",\"urgency\":\"LOW\",\"affectedUsers\":1}"),
+                dev, Role.EMPLOYEE)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errorCode").value("INVALID_INPUT"))
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("description"))
+                .andExpect(jsonPath("$.fieldErrors[0].message").value(containsString("4000")));
+
+        for (String impact : List.of("7", "\"7\"", "\"CATASTROPHIC\"")) {
+            perform(post("/api/v1/incidents").contentType(MediaType.APPLICATION_JSON)
+                    .content("{\"title\":\"Fee payment app unavailable\",\"description\":\"Students cannot pay\","
+                            + "\"impact\":" + impact + ",\"urgency\":\"LOW\",\"affectedUsers\":1}"),
+                    dev, Role.EMPLOYEE)
+                    .andExpect(status().isBadRequest())
+                    .andExpect(jsonPath("$.status").value(400))
+                    .andExpect(jsonPath("$.path").value("/api/v1/incidents"))
+                    .andExpect(jsonPath("$.id").doesNotExist());
+        }
     }
 
     @Test

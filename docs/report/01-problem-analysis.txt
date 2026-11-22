@@ -1,0 +1,99 @@
+1. PROBLEM ANALYSIS
+
+1.1 The problem
+
+A campus IT department (modelled on a CCIT-style setup) runs the services everyone depends on:
+single sign-on, the LMS, the ERP, email, hostel Wi-Fi and the fee payment app. When one of them
+fails, many people notice at once, and most of them report it separately, by email, phone or a
+shared form. The desk then has to work out, by hand and under time pressure:
+
+  - which of the reports are really the same problem;
+  - how urgent each problem is, compared with everything else in the queue;
+  - who should fix it, and whether they have time;
+  - whether it is being fixed within the agreed time, and who to tell if it is not;
+  - afterwards, what actually happened and who did what.
+
+Done by hand, each of these goes wrong in a predictable way, which is the starting point for
+TriageGraph.
+
+  Challenge                Today (email, phone, spreadsheet)        What TriageGraph does
+  -----------------------  ---------------------------------------  ---------------------------------
+  Duplicate reports        Twenty tickets for one outage; each      Similar reports are detected as
+                           is triaged and answered separately       they are typed; the reporter joins
+                                                                    the existing incident instead
+  Gut-feel priority        "Urgent" means whoever shouts loudest    A documented formula over impact,
+                                                                    urgency, service criticality,
+                                                                    affected users and blast radius,
+                                                                    with the rationale shown
+  No fixed process         Tickets skip steps, are closed without   Ten lifecycle states with an
+                           the reporter agreeing, or reopened       explicit transition table; any
+                           with no record                           other action is refused
+  Uneven assignment        Work goes to whoever answers first;      Four assignment strategies over
+                           skills and load are ignored              skills, load and fix history
+  Missed deadlines         Nobody notices until the reporter        SLA clocks with warnings, breaches
+                           complains                                and a four-level escalation chain
+  Hidden root causes       LMS, ERP and email tickets are worked    A service dependency graph that
+                           separately although SSO is down          points at the likely common cause
+  No trustworthy history   Records can be edited afterwards;        An append-only, hash-chained audit
+                           nobody can prove what happened           trail that detects any change
+
+
+1.2 Stakeholders
+
+  Stakeholder                  Interest                                  Role in the system
+  ---------------------------  ----------------------------------------  ------------------------
+  Students, faculty and staff  Report a problem quickly, know it is      Employee
+                               being handled, confirm the fix
+  Support technicians          A clear queue, the right tickets for      Technician
+                               their skills, history of similar fixes
+  Team leads                   See the team's load, reassign, act on     Team lead
+                               the first escalation
+  System administrators        Configure users, services, SLA policies   Administrator
+                               and strategies; watch the whole desk
+  IT manager / CCIT head       Oversight: SLA performance, major         IT manager
+                               incidents, reports, audit; final
+                               escalation level
+  Campus administration        Services that stay up; evidence of how    (reads the reports)
+                               incidents were handled
+
+
+1.3 The solution in one paragraph
+
+TriageGraph is a web-based IT service management platform built as a Spring Boot modular monolith
+with a React front end. Every incident follows one lifecycle: Report, Classify, Prioritise, Assign,
+Investigate, Resolve, Verify, Close. Two intelligence layers sit on top. Triage intelligence asks
+"has this already been reported, and what kind of problem is it?": it suggests the category and
+service while the employee types and warns about likely duplicates. Topology intelligence asks "are
+these separate problems, or one hidden cause?": it uses the service dependency graph to rank
+probable root causes. Both feed back into priority: joining a duplicate raises the affected-user
+count, and a service with many dependents has a larger blast radius.
+
+
+1.4 How the core addresses the challenges
+
+The incident is the centre of the system. Triage, assignment, SLA, notifications and reports all
+read or change incidents, so the incident module is strict about its own rules and loose about
+everyone else:
+
+  - One aggregate, Incident, owns its state. Status, priority and assignee have no public setters;
+    every change goes through a named action (acknowledge, resolve, ...) that checks the rules.
+  - Illegal actions are refused with 409 and change nothing (State pattern, section 4.5).
+  - Who may act is checked on the incident itself, not only in the user interface: an employee can
+    only open incidents they reported or joined, and only the assignee can work an incident.
+  - Every change becomes a domain event, and every event becomes a tamper-evident audit entry
+    written in the same transaction (section 3.5).
+  - Other modules reach incidents only through the contracts in the shared package, so each team
+    member could build and test their module independently (section 3.3).
+
+
+1.5 Assumptions
+
+  - One campus, one IT department, one time zone. Times are stored in UTC and shown in IST.
+  - Every user has an account; employees register themselves and staff accounts are created by an
+    administrator. There is no integration with the campus directory (LDAP) yet.
+  - The application runs on a single campus server. The design keeps module boundaries so it could
+    be split later, but nothing currently needs more than one instance.
+  - Monitoring data (service health, change records) is entered or seeded, not collected from live
+    infrastructure.
+  - Text analysis is tuned for English reports.
+  - Gemini is optional. With no API key, every feature still works from local models and rules.

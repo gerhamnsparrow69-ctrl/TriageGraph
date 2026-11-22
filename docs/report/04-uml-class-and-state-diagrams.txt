@@ -1,0 +1,178 @@
+4. UML DIAGRAMS
+
+All diagrams are drawn from the code with PlantUML. The sources are in docs/uml/*.puml, with a PNG
+and an SVG next to each. Class and method names in the diagrams are the real ones in
+in.ac.bitspilani.triagegraph.
+
+  Figure  Diagram                                   File                              Author
+  ------  ----------------------------------------  --------------------------------  ------
+  4.1     Modules and shared ports (overall)        m1-module-overview                M1
+  4.2     Use cases                                 use-case                          M4
+  4.3     Incident domain model                     m1-incident-classes               M1
+  4.4     Incident services, ports and adapters     m1-incident-services              M1
+  4.5     Incident lifecycle (state diagram)        m1-incident-lifecycle             M1
+  4.6     Lifecycle as the State pattern            m1-incident-state-classes         M1
+  4.7     Triage module                             m2-triage-classes                 M2
+  4.8     Triage adapters                           m2-triage-adapters                M2
+  4.9     Assignment strategies                     m2-assignment-classes             M2
+  4.10    Workflow 1 (report to assignment)         m2-workflow1-sequence             M2
+
+Member 4's use case diagram and descriptions (04-use-cases.txt) open this section. Members 3 and 4
+add their module class diagrams to the table in the same way.
+
+
+4.1 Modules and shared ports (Figure 4.1)
+
+The overall diagram shows the feature modules grouped by owner and the shared ports between them.
+A hollow-triangle arrow means a module provides (implements) a port; an open arrow means it uses
+one. The incident module is the hub: it provides IncidentCommandPort and IncidentQueryPort, and
+uses the ports of every module it needs during report() (section 3.6). Triage uses
+IncidentCommandPort to join and merge, and assignment uses it to reassign.
+
+  Port                  Provided by                          Main users
+  --------------------  -----------------------------------  ----------------------------------
+  IncidentCommandPort   incident: IncidentCommandService      triage, assignment
+  IncidentQueryPort     incident: IncidentQueryService        triage, assignment, sla, topology,
+                                                              notification, audit, identity
+  PriorityService       priority: PriorityServiceImpl         incident
+  TriageService         triage: TriageServiceImpl             incident
+  AssignmentService     assignment: AssignmentServiceImpl     incident
+  CatalogQuery          catalog: CatalogQueryService          most modules
+  BlastRadiusProvider   topology: ImpactAnalyzer              incident
+  SlaService            sla: DefaultSlaPolicyService          incident
+  UserDirectory         identity: UserDirectoryService        most modules
+  DomainEventPublisher  config: SpringDomainEventPublisher    incident, sla
+
+
+4.2 Incident domain model (Figure 4.3)
+
+Incident is the aggregate root: the only way to change an incident, its notes or its embedded
+parts. It is a JPA @Entity with a @Version column, so two technicians cannot silently overwrite
+each other's change (optimistic locking).
+
+  Part               Relationship                   Holds
+  -----------------  -----------------------------  ----------------------------------------------
+  SlaDeadlines       composition, @Embeddable       policy, response and resolution due times,
+                                                    first response, pause start; markResponded,
+                                                    pause, resume
+  ClassificationInfo composition, @Embeddable       how the category was chosen: source,
+                                                    confidence, explanation
+  Resolution         composition, @Embeddable       summary, root cause, when and by whom
+  Closure            composition, @Embeddable       when and by whom it was closed
+  Feedback           composition, @Embeddable       rating 1 to 5 and comment, given once
+  InvestigationNote  composition, @OneToMany        text (at most 2000 characters), author id,
+                     (cascade, orphan removal)      internal flag
+  Incident.Builder   nested class                   the seven creation inputs; build() validates
+  Actor              dependency (record)            who is acting: id and role, or Actor.system()
+  Trackable          realisation                    id, code, status and priority
+  IncidentState      association                    the current state object (Figure 4.6)
+
+Design decisions shown in the diagram:
+
+  - No public setters for status, priority or assignee. Every change goes through a named method,
+    grouped in the diagram as lifecycle actions, other behaviour, permissions and events.
+  - Other modules' objects are referenced by id (reporterId, assigneeId, serviceId, categoryCode)
+    and followers are a Set<Long>, so the incident never holds another module's entity.
+  - The code is derived from the id, not stored: id 1 is INC-1001 (getCode, idFromCode).
+  - pendingEvents holds functions, not events. An event is built when it is pulled after saving,
+    so even the IncidentReported event raised in the constructor carries the generated id and code.
+  - Validation is in the model: title at most 200 characters, description at most 4000, affected
+    users at least 1. The API repeats the limits with Bean Validation so the user gets field errors.
+
+
+4.3 Incident services, ports and adapters (Figure 4.4)
+
+  - IncidentController maps HTTP to IncidentLifecycleService. It has no business logic and never
+    touches the repository.
+  - IncidentLifecycleService is a Facade over the factory, the repository and seven ports: one
+    method per use case, each one load, act, save, publish.
+  - IncidentCommandService implements IncidentCommandPort for other modules (join, merge, reassign,
+    SLA warnings and breaches, escalation). IncidentQueryService implements IncidentQueryPort.
+  - IncidentView is the response record, built per caller by IncidentView.of(incident, viewer,
+    names). UserNames resolves display names once per response.
+  - JpaIncidentRepository implements the domain's IncidentRepository with Spring Data. save()
+    flushes, so generated ids exist before the events are pulled.
+
+
+4.4 Incident lifecycle (Figure 4.5)
+
+The state diagram shows the ten statuses of IncidentStatus, every allowed transition with the
+method that causes it, who may call it, and its side effects on the SLA clock. It implements
+business rules BR-L1 to BR-L8 (section 2).
+
+  From                   Action           To            Who                       Side effect
+  ---------------------  ---------------  ------------  ------------------------  ----------------------
+  NEW                    classify         CLASSIFIED    system or any non-        category, service,
+                                                        employee                  classification info
+  NEW, CLASSIFIED        mergeInto        MERGED        system or any non-        duplicateOfId set;
+                                                        employee                  reporter follows parent
+  CLASSIFIED             assignTo         ASSIGNED      system, team lead,        assignee and strategy
+                                                        admin, IT manager         recorded
+  ASSIGNED, ACKNOWLEDGED assignTo         ASSIGNED      system, team lead,        not to the same
+                         (reassign)                     admin, IT manager         technician
+  ASSIGNED               acknowledge      ACKNOWLEDGED  assignee                  response SLA met
+  ACKNOWLEDGED           startWork        IN_PROGRESS   assignee
+  IN_PROGRESS            requestInfo      PENDING_INFO  assignee                  question as a note;
+                                                                                  SLA clock paused
+  PENDING_INFO           provideInfo      IN_PROGRESS   reporter                  answer as a note; clock
+                                                                                  resumes, deadline moves
+                                                                                  out by the paused time
+  IN_PROGRESS            resolve          RESOLVED      assignee                  resolution recorded;
+                                                                                  clock paused
+  RESOLVED               verify           VERIFIED      reporter or system
+  RESOLVED               reopen           IN_PROGRESS   reporter, with a reason   resolution discarded,
+                                                                                  reopenCount + 1, clock
+                                                                                  resumes
+  VERIFIED               close            CLOSED        assignee, team lead,      closure recorded
+                                                        admin, IT manager, system
+  CLOSED                 submitFeedback   (stays)       reporter, once
+
+CLOSED and MERGED are terminal. Adding notes, joining as an affected user, SLA warnings and
+breaches, and escalation are allowed in every open status and do not change the status; on a
+terminal incident they are refused.
+
+A full NEW to CLOSED run produces exactly nine events, which become nine audit entries in this
+order: IncidentReported, IncidentStatusChanged (to CLASSIFIED), PriorityAssigned, IncidentAssigned
+(this is the move into ASSIGNED, so there is no separate status change), then IncidentStatusChanged
+for ACKNOWLEDGED, IN_PROGRESS, RESOLVED, VERIFIED and CLOSED (TC05).
+
+
+4.5 The lifecycle as the State pattern (Figure 4.6)
+
+Each status has its own subclass of the abstract IncidentState (NewState ... MergedState). The base
+class implements every lifecycle method as "reject": it throws InvalidStateTransitionException
+(409) with the actions that are allowed now. A subclass overrides only the actions in its own row
+of the table above. Incident.resolve() simply calls state().resolve(...), so which code runs
+depends on the current state object, with no if/else over the status.
+
+  - States hold no data, so each is a stateless singleton. IncidentStateRegistry maps each
+    IncidentStatus to its state in an EnumMap and throws when the class loads if any status has no
+    state.
+  - allowedNext() and allowedActions() return unmodifiable EnumSets. Incident.allowedActions(actor)
+    combines them with the permission check, and the UI renders exactly those buttons.
+  - Steps that several states share are final helpers in the base class: doMerge (NEW and
+    CLASSIFIED), doReassign (ASSIGNED and ACKNOWLEDGED) and reject.
+  - The states change the incident only through its state hooks (transitionTo, changeAssignee,
+    recordResolution, ...). transitionTo checks allowedNext() again, so even a mistake in a state
+    class cannot move an incident illegally.
+
+Every action is checked in a fixed order: the state first (409), then who is asking (403), then the
+input (400). So closing a NEW incident is always 409, whoever asks (TC16), and a rejected action
+changes nothing and leaves no audit entry (TC17).
+
+
+4.6 Differences from the Phase 2 blueprint
+
+The diagrams show the code as built. Where it differs from the Phase 2 design, the change was
+deliberate:
+
+  - The blueprint showed Incident holding Employee, Technician, Category and ITService objects. The
+    code holds their ids, because those classes belong to other modules and the incident domain may
+    not import them (checked by ArchUnit).
+  - The blueprint placed the SLA clock (SlaTracker) in the sla module. The incident owns its
+    deadlines as the SlaDeadlines embeddable, because the lifecycle states pause and resume the clock
+    as part of the same transition; the sla module supplies the targets and monitors them.
+  - Not built in this version: the MajorIncident composite (Trackable is ready for it), the second
+    priority calculator and its runtime switch, and automatic verification of resolved incidents
+    after 72 hours (BR-L7). verify() and close() already accept the system actor for when that job
+    is added.
