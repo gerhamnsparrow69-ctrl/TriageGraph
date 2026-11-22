@@ -5,6 +5,8 @@ the report sections and the video segment. Only edit your own packages and folde
 
 | | Member 1 | Member 2 | Member 3 | Member 4 |
 |---|---|---|---|---|
+| Name | Divyam Mehta | Abir Akash Baruah | Ayush Kumar | Arav Singh Baghel |
+| ID | 2025A7PS0115H | 2025A7PS0117H | 2025ADPS0164H | 2025A7PS0103H |
 | Role | Domain Core & Lifecycle | Triage AI & Assignment | Topology, SLA & Escalation | Platform, Security & UX |
 | Backend packages | `shared` (contracts), `incident`, `priority`, `audit` | `triage`, `assignment` | `catalog`, `topology`, `sla`, `escalation` | `config`, `identity`, `notification`, `reporting` |
 | Frontend folders | `features/incident`, `features/audit` | `features/triage`, `features/assignment`, `features/settings` | `features/topology`, `features/sla`, `features/catalog` | `app/` shell, `api/`, `features/auth`, `features/users`, `features/notifications`, `features/search`, `features/reports`, `features/dashboard` |
