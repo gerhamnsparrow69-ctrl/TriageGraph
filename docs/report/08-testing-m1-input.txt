@@ -1,0 +1,53 @@
+8. TESTING: MEMBER 1'S INPUT
+
+*For Member 2, who compiles section 8. The planned cases (TC01, TC02, TC05, TC07, TC08, TC13, TC16,
+TC17, TC24, TC25, TC32) are filled in docs/test-cases.txt; this file adds the per-class summary.*
+
+Member 1's modules (incident, priority, audit, shared) have 311 test methods. All pass under
+./mvnw test (683 tests in the whole backend, 0 failures, 0 errors, 22 Nov 2026).
+
+  Test class                                     Tests  What it proves
+  ---------------------------------------------  -----  ------------------------------------------
+  IncidentStateTransitionTest                    130    every illegal (status, action) pair is
+                                                        rejected and changes nothing; every legal
+                                                        one reaches the documented status (TC16)
+  IncidentStateRegistryTest                      12     one distinct singleton state per status,
+                                                        with the documented next statuses
+  IncidentTest                                   24     nine ordered events (TC05), check order
+                                                        409 then 403 then 400, permissions, SLA
+                                                        pause and resume, merge, feedback
+  IncidentJoinTest, IncidentSlaEscalationTest    10     joining as affected; SLA warnings,
+                                                        breaches and escalation on the incident
+  IncidentLifecycleServiceTest                   14     report() orchestration against mocked
+                                                        ports, the "nobody free" path, access,
+                                                        internal notes, display names (TC01, TC24)
+  IncidentCommandServiceSlaTest,                 8      the command and query ports; factory
+  IncidentFactoryTest, IncidentQueryServiceTest         validation and backdating
+  IncidentControllerTest                         7      over HTTP: report to ASSIGNED, full
+                                                        lifecycle, 400 / 401 / 403 / 404 / 409
+                                                        (TC01, TC13)
+  IncidentRulesAndAccessTest                     4      TC16, TC17, TC24, TC25 over HTTP
+  JpaIncidentRepositoryTest                      2      the aggregate round-trips through the
+                                                        database and rebuilds its state
+  IncidentFallbacksTest                          6      the stand-in ports behave like the real ones
+  WeightedScorePriorityCalculatorTest            35     worked examples, every band and multiplier
+                                                        boundary (TC02, TC07, TC08)
+  PriorityServiceImplTest,                       12     security floor, registry rules, admin-only
+  PriorityCalculatorRegistryTest,                       settings endpoint
+  PriorityCalculatorSettingsControllerTest
+  AuditTrailIntegrationTest                      5      nine ordered audit entries (TC05), rejected
+                                                        actions not audited (TC17), tampered row
+                                                        named (TC32), rollback leaves no entry
+  AuditHasherTest, AuditChainWriterTest,         31     hash fields and boundaries, chain linking
+  AuditServiceTest, AuditTrailListenerTest              under a transaction, verification, event to
+                                                        entry mapping, actor names
+  ArchitectureTest                               5      layering and module rules (TC32)
+  ContractsTest, GlobalExceptionHandlerTest      6      sealed contracts, error mapping to
+                                                        ProblemDetail
+
+Bug log entries found while testing (Member 1):
+
+  - TC13: an impact outside the enum (for example 7) is rejected with 400, but as a generic
+    "Failed to read request" ProblemDetail (errorCode HTTP_400) without fieldErrors, unlike the
+    other validation errors. The test documents the current behaviour; mapping unreadable fields to
+    INVALID_INPUT with a field error is a small change in GlobalExceptionHandler.

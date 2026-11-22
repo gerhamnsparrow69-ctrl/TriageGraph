@@ -1,0 +1,82 @@
+@startuml m1-module-overview
+title TriageGraph: feature modules and the shared ports between them
+skinparam shadowing false
+skinparam defaultTextAlignment center
+skinparam rectangle {
+  BorderColor #64748B
+}
+skinparam rectangle<<port>> {
+  BackgroundColor #EEF2FF
+  BorderColor #4F46E5
+}
+
+package "Member 1: Domain core" #EFF6FF {
+  rectangle "incident" as incident
+  rectangle "priority" as priority
+  rectangle "audit" as audit
+}
+
+package "shared.contracts.ports" #F8FAFC {
+  rectangle "IncidentCommandPort" <<port>> as ICP
+  rectangle "IncidentQueryPort" <<port>> as IQP
+  rectangle "PriorityService" <<port>> as PS
+  rectangle "TriageService" <<port>> as TS
+  rectangle "AssignmentService" <<port>> as AS
+  rectangle "CatalogQuery" <<port>> as CQ
+  rectangle "BlastRadiusProvider" <<port>> as BRP
+  rectangle "SlaService" <<port>> as SS
+  rectangle "UserDirectory" <<port>> as UD
+  rectangle "DomainEventPublisher" <<port>> as DEP
+}
+
+package "Member 2: Triage & assignment" #F5F3FF {
+  rectangle "triage" as triage
+  rectangle "assignment" as assignment
+}
+package "Member 3: Topology & SLA" #ECFDF5 {
+  rectangle "catalog" as catalog
+  rectangle "topology" as topology
+  rectangle "sla" as sla
+}
+package "Member 4: Platform" #FFF7ED {
+  rectangle "identity" as identity
+  rectangle "notification" as notification
+  rectangle "reporting" as reporting
+  rectangle "config" as config
+}
+
+' implements (solid, hollow triangle)
+incident ..|> ICP
+incident ..|> IQP
+priority ..|> PS
+triage ..|> TS
+assignment ..|> AS
+catalog ..|> CQ
+topology ..|> BRP
+sla ..|> SS
+identity ..|> UD
+config ..|> DEP
+
+' uses (dashed arrow)
+incident ..> PS
+incident ..> TS
+incident ..> AS
+incident ..> CQ
+incident ..> BRP
+incident ..> SS
+incident ..> UD
+incident ..> DEP
+triage ..> ICP : join, merge
+assignment ..> ICP : reassign
+audit ..> IQP
+audit ..> UD
+
+legend bottom
+  Hollow-triangle arrow: the module provides (implements) the port. Open arrow: the module uses it.
+  IncidentQueryPort is also read by triage, assignment, sla, topology and notification;
+  CatalogQuery and UserDirectory are used by most modules (edges omitted for clarity).
+  Domain events flow through DomainEventPublisher: audit and SLA priority listeners run
+  BEFORE_COMMIT (same transaction); notification, live feed, triage, assignment and
+  topology listeners run AFTER_COMMIT.
+endlegend
+@enduml
