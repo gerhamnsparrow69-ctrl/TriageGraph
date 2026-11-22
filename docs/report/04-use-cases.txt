@@ -55,8 +55,7 @@ UC-07 Verify or reopen, give feedback
   Actor           Employee
   Main flow       Employee reads the resolution and verifies (VERIFIED), then the incident closes;
                   the Employee rates the fix 1 to 5.
-  Alternatives    Employee reopens with a reason (back to IN_PROGRESS, assignee notified). With no
-                  answer for 72 hours the system verifies automatically.
+  Alternatives    Employee reopens with a reason (back to IN_PROGRESS, assignee notified).
 
 UC-19 Receive notifications
   Actors          Any user; Email server; Push service
