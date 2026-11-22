@@ -110,52 +110,70 @@ backend/target/surefire-reports.
                                                           evaluation, keywords
     AssignmentApiIntegrationTest                   5      live strategy switch, 400, 403, 409 (TC23)
 
-  Member 3: catalogue, SLA, topology, RCA (123 test executions)
+  Member 3: catalogue, SLA, topology, RCA (123 test executions in the Surefire reports, 0 failures)
 
-    The per-class table comes from Member 3 (TC09, TC10, TC14, TC18, TC21, TC28, TC30, TC31 and the
-    RCA tests).
+    Test class                                     Tests  What it proves
+    ---------------------------------------------  -----  ------------------------------------------
+    CatalogControllerTest                          8      catalogue HTTP contract: list and get
+                                                          services and categories, unknown service
+                                                          404 (TC14), authentication and role checks,
+                                                          invalid id format
+    TopologyControllerTest                         7      topology HTTP contract: graph, direct and
+                                                          transitive dependencies and dependents,
+                                                          blast radius, unknown service 404, roles
+    JGraphTGraphBuilderTest                        9      the dependency graph: direct and
+                                                          transitive dependencies and dependents,
+                                                          diamonds counted once, duplicate edges,
+                                                          self-loops and cycles rejected with
+                                                          CyclicDependencyException (TC21), dangling
+                                                          edges and unknown services rejected
+    GraphRegistryTest                              4      graph reload: lazy start, a failed reload
+                                                          keeps the previous graph, a catalogue
+                                                          change reloads it, readers never see a
+                                                          half-built graph
+    CatalogSeederTest                              3      Appendix A services and categories seeded
+                                                          once; unknown category is not found
+    CatalogGraphSourceTest                         2      graph built from the seeded catalogue;
+                                                          expected blast radius
+    SlaModuleTest                                  9      default P1 to P4 targets and the Fee Payment
+                                                          App P1 override; warning and deadline
+                                                          boundaries (TC09, TC10); pause and resume
+                                                          (TC28)
+    SlaControllerTest                              4      SLA targets endpoint, parameter validation,
+                                                          unknown service 404, authentication
+    SlaReportControllerTest                        6      breach report: zero breaches, persisted
+                                                          response and resolution flags, an incident
+                                                          that breaches both clocks counted once,
+                                                          admin and IT manager access (TC10)
+    SlaEvaluatorTest                               32     the pure SLA evaluator: threshold boundaries
+                                                          (TC09), terminal and paused statuses,
+                                                          response acknowledgement, a pause that stops
+                                                          only the resolution clock (TC28), warning
+                                                          before breach, recorded decisions are not
+                                                          repeated, threshold validation (PR #13)
+    RcaControllerTest                              6      RCA endpoint, role authorisation, input
+                                                          validation, empty and unknown service
+    CoverageSpecificityRankerTest                  5      ranker: empty and invalid input, unknown
+                                                          services, snapshots, name fallbacks
+    EvidenceCollectorTest, RecentChangeEvidenceTest,
+    EvidenceAggregatorTest                         7      evidence from several providers, recent
+                                                          change window, capped and deterministic
+                                                          combined bonus
+    RcaScoringTest                                 15     coverage and specificity scoring, the seeded
+                                                          Campus SSO example (about 0.783, TC30),
+                                                          evidence bonuses, score cap, deterministic
+                                                          order, ambiguity threshold
+    CatalogChangeHistoryAdapterIntegrationTest,
+    CatalogChangeHistoryAdapterTest,
+    IncidentOpenLookupAdapterTest,
+    RcaOptionalIncidentWiringTest                  6      adapters over the seeded graph and persisted
+                                                          changes; repository errors propagate; active
+                                                          statuses are included and terminal ones are
+                                                          excluded; RCA works without the optional
+                                                          incident port
 
-    Test class                                      Tests  What it proves
-    ----------------------------------------------  -----  ------------------------------------------
-    CatalogControllerTest                              8  catalogue endpoints return DTOs; not-found,
-                                                           authentication, roles and invalid IDs
-    CatalogSeederTest                                  3  seeded catalogue counts, idempotency,
-                                                           reference mapping and unknown category
-    TopologyControllerTest                              7  graph, dependency/dependent and blast-radius
-                                                           responses; not-found, validation and access
-    GraphRegistryTest                                    4  lazy load, reload/versioning, failed reload
-                                                           preservation and concurrent snapshots
-    CatalogGraphSourceTest                              2  seeded 17-service/29-edge graph, idempotency
-                                                           and expected blast-radius counts
-    JGraphTGraphBuilderTest                             9  graph construction, transitive relationships,
-                                                           cycles, dangling edges and immutability
-    RcaControllerTest                                    6  ranked response shape, authorization,
-                                                           validation, empty result and unknown service
-    CoverageSpecificityRankerTest                       5  empty/invalid input, one snapshot, candidate
-                                                           DTO mapping and service-name fallback
-    EvidenceCollectorTest                                2  evidence aggregation and cap; empty input
-                                                           avoids providers and clock
-    RecentChangeEvidenceTest                             3  inclusive time window, newest valid change,
-                                                           missing data and propagated failures
-    EvidenceAggregatorTest                               2  per-type maximum, cap, duplicate suppression
-                                                           and deterministic evidence ordering
-    RcaScoringTest                                      15  numerical ranking scenarios, evidence,
-                                                           ordering, ambiguity and invariants
-    CatalogChangeHistoryAdapterIntegrationTest           2  persisted history range/filtering and seeded
-                                                           graph ranking integration
-    CatalogChangeHistoryAdapterTest                      1  repository failures propagate unchanged
-    IncidentOpenLookupAdapterTest                        2  open-status filtering, optional lookup,
-                                                           warning and failure propagation
-    RcaOptionalIncidentWiringTest                       1  application starts without IncidentQueryPort
-                                                           and ranks without its evidence bonus
-    SlaModuleTest                                        9  policy defaults/override, thresholds, event
-                                                           repetition, clock flags and legacy pauses
-    SlaControllerTest                                    4  target DTO, invalid parameters, not-found
-                                                           and authentication
-    SlaReportControllerTest                              6  breach counts and admin/IT-manager access
-    SlaEvaluatorTest                                    32  pure evaluator thresholds, lifecycle states,
-                                                           pause/acknowledgement and duplicate flags
-    Total                                               123  Surefire executions
+    The counts are Surefire executions (SlaEvaluatorTest has parameterised tests, so its 15 methods
+    run 32 times). The 20 classes add up to 123.
 
   Member 4: config, identity, notification, reporting, seed (110 tests)
 
@@ -285,6 +303,21 @@ threshold slider.
 
 8.6 Known limits of the test suite
 
+  - SLA escalation is not wired end to end (Member 3): the live monitor (SlaMonitor, every 30
+    seconds) saves warnings and breaches and publishes SlaWarningRaised and SlaBreached, which
+    notifications, the Command Centre feed and the audit trail receive. It does not yet record
+    them on the incident or escalate it, and the standalone SlaEvaluator is not used by the
+    monitor. TC31 is therefore only partly covered: the incident-level escalation is tested on
+    its own, but nothing triggers it. There is no end-to-end test from monitor tick to
+    notification.
+  - TC18 (missing SLA policy) is not covered as written: the provider always supplies defaults for
+    P1 to P4, so a missing P2 policy cannot occur; the tests cover a null priority and an unknown
+    service instead.
+  - TC21 (dependency cycle) is covered at graph level only: the graph builder rejects
+    self-loops and cycles with CyclicDependencyException (mapped to 422), but the delivered
+    topology API is read-only, so no HTTP request can add a dependency.
+  - TC30 covers the root-cause ranking (Campus SSO first, about 0.783). Creating a Major Incident
+    with three child incidents is not part of the delivered RCA.
   - Gemini is only tested through a local test server and the failure paths (timeouts, 429, invalid
     JSON). We do not call the real Gemini service in tests, so no test depends on the network or an API
     key.
