@@ -116,7 +116,7 @@ public class IncidentLifecycleService {
 
     @Transactional(readOnly = true)
     public IncidentView get(long id, Actor viewer) {
-        return IncidentView.of(load(id, viewer), viewer);
+        return IncidentView.of(load(id, viewer), viewer, new UserNames(users)::of);
     }
 
     /** Manual (re)assignment by a team lead or admin. */
@@ -183,7 +183,7 @@ public class IncidentLifecycleService {
     private IncidentView saveAndPublish(Incident incident, Actor viewer) {
         Incident saved = repository.save(incident);
         events.publishAll(saved.pullEvents());
-        return IncidentView.of(saved, viewer);
+        return IncidentView.of(saved, viewer, new UserNames(users)::of);
     }
 
     private void requireTechnician(long technicianId) {

@@ -10,15 +10,19 @@ import in.ac.bitspilani.triagegraph.shared.contracts.enums.IncidentAction;
 import in.ac.bitspilani.triagegraph.shared.contracts.enums.IncidentStatus;
 import in.ac.bitspilani.triagegraph.shared.contracts.enums.Priority;
 import in.ac.bitspilani.triagegraph.shared.contracts.enums.Role;
+import in.ac.bitspilani.triagegraph.shared.contracts.enums.SlaKind;
 import in.ac.bitspilani.triagegraph.shared.contracts.enums.Urgency;
 import in.ac.bitspilani.triagegraph.shared.contracts.events.DuplicateLinked;
 import in.ac.bitspilani.triagegraph.shared.contracts.events.FeedbackSubmitted;
 import in.ac.bitspilani.triagegraph.shared.contracts.events.IncidentAssigned;
+import in.ac.bitspilani.triagegraph.shared.contracts.events.IncidentEscalated;
 import in.ac.bitspilani.triagegraph.shared.contracts.events.IncidentEvent;
 import in.ac.bitspilani.triagegraph.shared.contracts.events.IncidentReported;
 import in.ac.bitspilani.triagegraph.shared.contracts.events.IncidentStatusChanged;
 import in.ac.bitspilani.triagegraph.shared.contracts.events.NoteAdded;
 import in.ac.bitspilani.triagegraph.shared.contracts.events.PriorityAssigned;
+import in.ac.bitspilani.triagegraph.shared.contracts.events.SlaBreached;
+import in.ac.bitspilani.triagegraph.shared.contracts.events.SlaWarningRaised;
 import in.ac.bitspilani.triagegraph.shared.exception.InvalidInputException;
 import in.ac.bitspilani.triagegraph.shared.exception.InvalidStateTransitionException;
 import in.ac.bitspilani.triagegraph.shared.exception.UnauthorizedOperationException;
@@ -324,6 +328,55 @@ public class Incident implements Trackable {
         long incidentId = id;
         raise(i -> new DuplicateLinked(i.id, i.getCode(), by.id(), now, incidentId, userId, false));
         return true;
+    }
+
+    // ------------------------------------------------------------------ SLA and escalation (from SlaMonitor)
+
+    /** The SLA monitor saw {@code kind} approaching its due time; recorded as a system action. */
+    public void markSlaWarning(SlaKind kind, Instant now) {
+        requireOpenForSla("raise an SLA warning on");
+        Instant due = dueAt(kind);
+        this.updatedAt = now;
+        raise(i -> new SlaWarningRaised(i.id, i.getCode(), null, now, kind, due));
+    }
+
+    /** The SLA monitor saw {@code kind} pass its due time; recorded as a system action. */
+    public void markSlaBreached(SlaKind kind, Instant now) {
+        requireOpenForSla("record an SLA breach on");
+        Instant due = dueAt(kind);
+        this.updatedAt = now;
+        raise(i -> new SlaBreached(i.id, i.getCode(), null, now, kind, due));
+    }
+
+    /**
+     * Escalates to {@code level} (1 = team lead, 2 = manager, ...) and notifies {@code targetUserId}.
+     * The level never goes down: a repeated or lower escalation keeps the highest level reached.
+     */
+    public void escalate(int level, long targetUserId, String reason, Instant now) {
+        if (level < 1) {
+            throw new InvalidInputException("Escalation level must be at least 1.");
+        }
+        requireOpenForSla("escalate");
+        this.escalationLevel = Math.max(escalationLevel, level);
+        this.updatedAt = now;
+        String why = reason == null || reason.isBlank() ? null : reason.strip();
+        raise(i -> new IncidentEscalated(i.id, i.getCode(), null, now, level, targetUserId, why));
+    }
+
+    /** The due time the SLA monitor measured {@code kind} against; null if the clock never started. */
+    public Instant dueAt(SlaKind kind) {
+        Objects.requireNonNull(kind, "kind");
+        return switch (kind) {
+            case RESPONSE -> sla().getResponseDueAt();
+            case RESOLUTION -> sla().getResolutionDueAt();
+        };
+    }
+
+    private void requireOpenForSla(String what) {
+        if (isTerminal()) {
+            throw new InvalidStateTransitionException(
+                    "Cannot " + what + " " + label() + " because it is " + status + ".");
+        }
     }
 
     // ------------------------------------------------------------------ permissions

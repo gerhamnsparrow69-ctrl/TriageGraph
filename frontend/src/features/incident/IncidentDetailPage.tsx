@@ -48,11 +48,13 @@ export default function IncidentDetailPage() {
         <h1 className="mt-2 text-2xl font-semibold text-slate-900">{incident.title}</h1>
         <p className="mt-2 whitespace-pre-wrap text-slate-700">{incident.description}</p>
         <dl className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
-          <div><dt className="text-slate-500">Reported</dt><dd>{formatIst(incident.createdAt)}</dd></div>
+          <div><dt className="text-slate-500">Reported</dt>
+            <dd>{formatIst(incident.createdAt)}
+              <span className="block text-xs text-slate-500">by {incident.reporterName ?? 'the reporter'}</span></dd></div>
           <div><dt className="text-slate-500">Impact / urgency</dt><dd>{humanise(incident.impact)} / {humanise(incident.urgency)}</dd></div>
           <div><dt className="text-slate-500">Affected users</dt><dd>{incident.affectedUsers}</dd></div>
           <div><dt className="text-slate-500">Assignee</dt>
-            <dd>{incident.assigneeId ? `Technician #${incident.assigneeId}` : 'Not assigned yet'}</dd></div>
+            <dd>{incident.assigneeId == null ? 'Not assigned yet' : (incident.assigneeName ?? 'Assigned technician')}</dd></div>
         </dl>
         <div className="mt-4"><SlaSummary incident={incident} /></div>
         {incident.awaitingAssignmentReason && (
