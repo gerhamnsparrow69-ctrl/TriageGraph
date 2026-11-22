@@ -1,0 +1,226 @@
+@startuml
+' M3 ER/DB model based on frozen docs/db/schema.sql (22-Nov-2026)
+hide circle
+skinparam linetype ortho
+skinparam entity {
+  BackgroundColor #F7FAFC
+  BorderColor #334155
+  FontColor #0F172A
+}
+skinparam note {
+  BackgroundColor #FFF7ED
+  BorderColor #C2410C
+}
+
+entity "users" as users {
+  * id : bigint <<PK>>
+  --
+  email : varchar <<UQ>>
+  name : varchar
+  role : varchar
+  active : boolean
+  team_lead_id : bigint <<FK self>>
+}
+entity "technician_skills" as skills {
+  user_id : bigint <<FK>>
+  skill : varchar
+  (user_id, skill) : UNIQUE
+}
+entity "incidents" as incidents {
+  * id : bigint <<PK>>
+  --
+  title : varchar
+  status : varchar
+  priority : varchar
+  reporter_id : bigint <<logical ref>>
+  assignee_id : bigint <<logical ref>>
+  service_id : bigint <<logical ref>>
+  category_code : varchar <<logical ref>>
+  duplicate_of_id : bigint <<logical ref>>
+  major_incident_id : bigint <<logical ref>>
+  escalation_level : integer
+  sla_started_at : timestamptz
+  sla_responded_at : timestamptz
+  sla_paused_at : timestamptz
+  sla_response_due_at : timestamptz
+  sla_resolution_due_at : timestamptz
+  sla_warning_percent : integer
+}
+entity "incident_followers" as followers {
+  incident_id : bigint <<FK>>
+  user_id : bigint <<logical ref>>
+  (incident_id, user_id) : UNIQUE
+}
+entity "investigation_notes" as notes {
+  * id : bigint <<PK>>
+  --
+  incident_id : bigint <<FK>>
+  author_id : bigint <<logical ref>>
+  note : varchar
+}
+entity "audit_entries" as audit {
+  * id : bigint <<PK>>
+  --
+  incident_id : bigint <<logical ref>>
+  actor_id : bigint <<logical ref>>
+  action : varchar
+  occurred_at : timestamptz
+  prev_hash : varchar
+  hash : varchar <<UQ>>
+}
+entity "it_services" as services {
+  * id : bigint <<PK>>
+  --
+  code : varchar <<UQ>>
+  name : varchar
+  criticality : varchar
+}
+entity "categories" as categories {
+  * code : varchar <<PK>>
+  --
+  name : varchar
+  active : boolean
+  default_skill : varchar
+}
+entity "category_aliases" as aliases {
+  * category_code : varchar <<FK>>
+  * alias : varchar
+}
+entity "category_keywords" as catkeywords {
+  * category_code : varchar <<FK>>
+  * keyword : varchar
+}
+entity "service_dependencies" as deps {
+  * id : bigint <<PK>>
+  --
+  dependency_service_id : bigint <<FK>>
+  dependent_service_id : bigint <<FK>>
+}
+entity "change_records" as changes {
+  * id : bigint <<PK>>
+  --
+  service_id : bigint <<FK>>
+  description : varchar
+  logged_at : timestamptz
+}
+entity "sla_clocks" as clocks {
+  * incident_id : bigint <<PK>>
+  --
+  incident_code : varchar
+  priority : varchar
+  response_active_millis : bigint
+  response_warning_raised : boolean
+  response_breach_raised : boolean
+  resolution_active_millis : bigint
+  resolution_warning_raised : boolean
+  resolution_breach_raised : boolean
+  service_id : bigint <<logical ref>>
+}
+entity "notifications" as notifications {
+  * id : bigint <<PK>>
+  --
+  recipient_id : bigint <<logical ref>>
+  incident_id : bigint <<logical ref>>
+  event_type : varchar
+  subject : varchar
+  read_at : timestamptz
+}
+entity "notification_log" as nlog {
+  * id : bigint <<PK>>
+  --
+  recipient_id : bigint <<logical ref>>
+  incident_id : bigint <<logical ref>>
+  channel : varchar
+  status : varchar
+  created_at : timestamptz
+}
+entity "assignment_settings" as assignment {
+  * id : bigint <<PK>>
+  --
+  active_strategy : varchar
+  updated_by : bigint <<logical ref>>
+}
+entity "technician_fix" as fixes {
+  * id : bigint <<PK>>
+  --
+  incident_code : varchar <<UQ>>
+  technician_id : bigint <<logical ref>>
+  service_id : bigint <<logical ref>>
+  fixed_at : timestamptz
+}
+entity "triage_document" as tdoc {
+  * id : bigint <<PK>>
+  --
+  code : varchar <<UQ>>
+  incident_id : bigint <<logical ref>>
+  category_code : varchar <<logical ref>>
+  service_id : bigint <<logical ref>>
+  status : varchar
+  source : varchar
+}
+entity "triage_keyword" as tkey {
+  * id : bigint <<PK>>
+  --
+  phrase : varchar
+  target : varchar
+  target_key : varchar
+}
+entity "triage_settings" as tsettings {
+  * id : bigint <<PK>>
+  --
+  ai_enabled : boolean
+  likely_threshold : double
+  possibly_threshold : double
+  window_hours : integer
+  updated_by : bigint <<logical ref>>
+}
+
+' Foreign keys actually declared in frozen schema (solid)
+users ||--o{ users : team_lead_id
+users ||--o{ skills : user_id
+incidents ||--o{ followers : incident_id
+incidents ||--o{ notes : incident_id
+categories ||--o{ aliases : category_code
+categories ||--o{ catkeywords : category_code
+services ||--o{ changes : service_id
+services ||--o{ deps : dependency_service_id
+services ||--o{ deps : dependent_service_id
+
+' Logical/application associations only (dashed; not SQL FK constraints)
+incidents ..> users : reporter/assignee IDs
+incidents ..> services : service_id
+incidents ..> categories : category_code
+incidents ..> incidents : duplicate/major refs
+followers ..> users : user_id
+clocks ..> incidents : incident_id
+clocks ..> services : service_id
+ audit ..> incidents : incident_id
+ audit ..> users : actor_id
+notifications ..> users : recipient_id
+notifications ..> incidents : incident_id
+nlog ..> users : recipient_id
+nlog ..> incidents : incident_id
+fixes ..> users : technician_id
+fixes ..> services : service_id
+tdoc ..> incidents : incident_id
+tdoc ..> users : reporter/resolver IDs
+tdoc ..> services : service_id
+tdoc ..> categories : category_code
+assignment ..> users : updated_by
+tsettings ..> users : updated_by
+
+note right of clocks
+The frozen schema contains both
+incident-embedded SLA timestamps
+and the separate sla_clocks table.
+The M3 live-monitor integration
+is documented as deferred.
+end note
+note bottom
+Solid: FK declared in docs/db/schema.sql.
+Dashed: logical/application reference only;
+not a database-enforced FK in the frozen dump.
+The diagram shows key columns for readability;
+the SQL schema remains authoritative for all columns.
+end note
+@enduml

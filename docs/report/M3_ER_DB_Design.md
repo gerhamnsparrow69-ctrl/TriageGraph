@@ -1,0 +1,45 @@
+# M3 report material — Database and ER design
+
+## Database design overview
+
+TriageGraph uses a relational persistence model generated from the application's JPA entities. The frozen PostgreSQL schema snapshot identifies 20 tables distributed across the identity, incident, audit, catalogue, SLA, assignment, triage and notification modules. The reporting module reads existing persisted data and does not introduce a separate reporting table in the frozen schema.
+
+The database is designed around the incident as the central business record. `incidents` stores the incident's identity, title and description, lifecycle status, priority, impact and urgency, reporter and assignee identifiers, service/category identifiers, timestamps, duplicate/major-incident references, escalation level, and the embedded SLA timing attributes. The lifecycle status is constrained to the ten values `NEW`, `CLASSIFIED`, `ASSIGNED`, `ACKNOWLEDGED`, `IN_PROGRESS`, `PENDING_INFO`, `RESOLVED`, `VERIFIED`, `CLOSED` and `MERGED`.
+
+The catalogue and topology data is normalised into `it_services`, `categories`, `category_aliases`, `category_keywords`, `service_dependencies` and `change_records`. A service has a unique code and a criticality. Categories carry a code, name, active flag and optional default skill; aliases and keywords support text classification. `service_dependencies` stores directed service-to-service dependency edges, while `change_records` records a service, description and timestamp. This graph is used by the topology views and contributes blast-radius information to prioritisation and RCA.
+
+Identity and technician capability data is stored in `users` and `technician_skills`. The `users` table contains account, role and active-state information, and also the technician/team-lead workload attributes. `team_lead_id` is a self-reference used to represent the reporting hierarchy. `technician_skills` associates users with skills.
+
+The incident module uses `incident_followers` for employees who join an incident and `investigation_notes` for investigation history. `audit_entries` stores ordered lifecycle/audit records, including actor, action, state transition, timestamp and hash-chain fields. Notification delivery is represented by `notifications` and `notification_log`, separating user-visible notifications from delivery-channel outcomes.
+
+The SLA module currently persists elapsed-clock and warning/breach flags in `sla_clocks`. The `incidents` record also has embedded SLA attributes such as `sla_started_at`, `sla_responded_at`, `sla_paused_at`, `sla_response_due_at`, `sla_resolution_due_at`, `sla_warning_percent` and `sla_policy`. These represent two related persistence views in the frozen schema; the live monitor integration and source-of-truth reconciliation are documented as remaining work rather than claimed as complete.
+
+Assignment configuration is persisted in `assignment_settings`, while `technician_fix` stores historical technician/service fix information used by workload or resolution features. Triage configuration and supporting data are held in `triage_document`, `triage_keyword` and `triage_settings`.
+
+## Referential integrity
+
+The ER diagram distinguishes database-enforced foreign keys from application-level identifiers. The frozen schema declares foreign keys for:
+
+- `change_records.service_id` → `it_services.id`;
+- `technician_skills.user_id` → `users.id`;
+- both `service_dependencies` service identifiers → `it_services.id`;
+- `incident_followers.incident_id` → `incidents.id`;
+- `category_aliases.category_code` and `category_keywords.category_code` → `categories.code`;
+- `investigation_notes.incident_id` → `incidents.id`;
+- `users.team_lead_id` → `users.id`.
+
+Several other identifier columns are logical references used by the application but are not declared as foreign-key constraints in the frozen SQL dump. Examples include the incident's reporter, assignee, service and category identifiers; the `sla_clocks.incident_id`; notification recipient/incident identifiers; and selected triage or technician-fix identifiers. These are shown as dashed associations in the diagram so the report does not overstate database-enforced referential integrity.
+
+## Constraints and indexes
+
+The schema also applies primary keys to the main tables and unique constraints to important natural or relationship keys. Examples include unique user email, service code, audit hash, the `(dependent_service_id, dependency_service_id)` pair, the `(incident_id, user_id)` follower pair, `(user_id, skill)`, and unique triage-document identifiers. The audit table has an incident-oriented index, the notification table has a recipient/time index, and technician fixes have a technician index.
+
+## M3 responsibilities reflected in the model
+
+M3 owns the service catalogue, service dependency graph, change-history adapter, SLA module and RCA capability. The ER model therefore emphasises `it_services`, the category tables, `service_dependencies`, `change_records`, `sla_clocks` and the incident fields read by SLA/RCA. The graph is a directed relation: a dependent service points to the service it relies on. The topology API exposes the graph, dependencies, dependents and blast-radius details; RCA evaluates candidates against the same dependency structure.
+
+The frozen schema was generated after starting the application against an empty PostgreSQL database with Hibernate `ddl-auto=update`. The team agreed to retain the existing `sla_clocks` table and stop using it only after a replacement is proven; this report does not propose dropping it.
+
+**Figure:** `M3_ER_Diagram.svg` (editable PlantUML source: `M3_ER_Diagram.puml`).
+
+**Source files:** `docs/db/schema.sql`, `docs/ownership.txt`, and the M3 catalogue/topology/SLA module source.

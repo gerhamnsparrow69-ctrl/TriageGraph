@@ -1,0 +1,40 @@
+# M3 report material — Innovation, OOP design and limitations
+
+## Design contributions and OOP concepts
+
+### Adapter at the topology boundary
+
+M3 separates the service catalogue and graph-facing use cases from the underlying graph/persistence representation through ports and adapters. The graph adapter exposes catalogue dependency data as the topology abstraction consumed by the topology and RCA modules. This keeps callers from depending directly on graph-library details and allows the same service graph to support UI queries, blast-radius calculation and RCA candidate generation.
+
+### Composite evidence collection for RCA
+
+RCA combines different evidence sources—recent service changes and open incidents—into one candidate assessment. Each evidence provider contributes typed evidence, and the aggregator produces a stable per-candidate result. This is a compositional design: the ranking engine can combine independent evidence providers without hard-coding each provider's storage implementation into the scorer.
+
+### Reuse of the service dependency graph
+
+The same topology model serves multiple responsibilities: visual exploration, blast-radius analysis and RCA candidate scoring. Reusing one graph avoids maintaining different dependency interpretations in separate features. The service map is exposed to both administrative and technician roles, while the blast-radius result also provides input to the wider prioritisation workflow.
+
+### Pure evaluation component
+
+The standalone SLA evaluator is deliberately separated from repositories, event publishers and wall-clock calls. It receives an immutable evaluation input and returns decisions. This makes boundary conditions, lifecycle states and duplicate suppression deterministic and unit-testable. The evaluator is a decision component, not a live scheduler or event publisher.
+
+### Escalation as a responsibility chain (planned orchestration)
+
+The intended assignee → team lead → administrator → IT manager path maps naturally to Chain of Responsibility: each escalation level identifies the next responsible role without mixing notification delivery with assignment mutation. A common monitor loop can use a Template Method-style sequence—obtain candidates, evaluate state, invoke a command port, handle per-incident failure—while the SLA evaluator supplies the pure decision. These are the design patterns for the intended M3 orchestration; the timed end-to-end chain is not yet live-wired and is listed as future work.
+
+## Limitations and future work
+
+1. **Live SLA monitor integration:** the evaluator has been implemented and tested independently, but the M3 scheduler has not been fully connected to M1's incident command methods. The existing direct M3 event publication must be removed when the command-port path is activated to avoid duplicate warnings/breaches.
+2. **SLA persistence/report reconciliation:** the frozen database contains both incident-embedded SLA timing fields and the separate `sla_clocks` table. The breach report currently reads the clock flags. A single fully integrated source of truth and historical reporting strategy remain to be completed.
+3. **Policy management:** the current SLA UI displays targets for a selected service/priority. The backend uses defaults and a service-specific P1 override; it is not a complete administrator-managed policy CRUD feature with a full policy matrix.
+4. **TC18 policy-missing path:** because the current policy service supplies P1–P4 defaults, the planned “no service policy and no P2 default” acceptance case is not currently represented by a live missing-policy configuration scenario or admin-alert test.
+5. **TC21 dependency-cycle mutation:** the topology API exposed for the delivered feature is read-oriented. There is no demonstrated dependency-edit endpoint through which the requested cycle-creation/422 acceptance scenario can be exercised.
+6. **RCA-to-Major-Incident correlation:** RCA ranks likely common causes, but automated Major Incident creation and linking of three child incidents are outside the delivered RCA PR.
+7. **Automated escalation:** M1 has the aggregate-level escalation operation/event and M4 handles notifications, but M3's timed policy/planner orchestration is not live. Reassignment remains a human decision through the M2 assignment workflow; M3 must never change assignee automatically.
+8. **Cycle safety and graph administration:** cycle detection is important for maintaining a valid dependency graph, but the current read-only UI/API does not demonstrate an administrative graph-editing workflow.
+9. **SLA pause accuracy:** a polling clock can observe pause/resume transitions late. The intended incident-owned timing state should be the authoritative source; the M3 evaluator must consume that state rather than independently reconstructing lifecycle time.
+10. **Test evidence quality:** some older SLA module tests exercise a helper or persisted clock state rather than the complete live monitor/incident-command path. They are useful unit/contract evidence but should not be described as end-to-end live alert verification.
+
+## Overall M3 conclusion
+
+M3 delivered the catalogue, topology, RCA ranking API, SLA target/report APIs and all four feature pages. The RCA implementation is tested and returns explainable, deterministic rankings. The standalone SLA evaluator is tested in isolation. The remaining major engineering gap is the live SLA warning/breach orchestration and the timed escalation policy; these are explicitly identified as future work rather than represented as complete features.
