@@ -1,10 +1,12 @@
 import type { RouteObject } from 'react-router'
-import TopologyPage from './TopologyPage'
+
+const page = () =>
+  import('./TopologyPage').then((m) => ({ Component: m.default }))
 
 export const topologyAdminRoutes: RouteObject[] = [
-  { path: 'topology', element: <TopologyPage /> },
+  { path: 'topology', lazy: page },
 ]
 
 export const topologyTechnicianRoutes: RouteObject[] = [
-  { path: 'topology', element: <TopologyPage /> },
+  { path: 'topology', lazy: page },
 ]
