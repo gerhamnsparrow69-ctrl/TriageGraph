@@ -59,7 +59,9 @@ function SettingsForm({ initial, canEdit, onSaved, onError }: {
 
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      <Slider label="Likely duplicate at" value={likely} onChange={setLikely} disabled={!canEdit}
+      <Slider label="Likely duplicate at" value={likely}
+        onChange={(v) => { setLikely(v); window.dispatchEvent(new CustomEvent('triage-threshold-preview', { detail: v })) }}
+        disabled={!canEdit}
         hint="Shows the 'join this incident' banner. Calibrated value: 0.62." />
       <Slider label="Possibly related at" value={possibly} onChange={setPossibly} disabled={!canEdit}
         hint="Shown as a side list only." />
