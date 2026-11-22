@@ -1,0 +1,37 @@
+@startuml
+' Target architecture only — not the live implementation in the submitted scope.
+skinparam sequenceMessageAlign center
+actor Scheduler
+participant "SlaMonitor (M3)" as Monitor
+participant "IncidentQueryPort (M1)" as Query
+participant "SlaEvaluator (M3, pure)" as Evaluator
+participant "IncidentCommandPort (M1)" as Command
+participant "IncidentCommandService / Incident aggregate (M1)" as Incident
+participant "Domain event bus" as Events
+participant "Audit + Notification listeners (M4)" as Consumers
+
+Scheduler -> Monitor : scheduled poll(now)
+Monitor -> Query : openWithDeadlineBefore(now + max target)
+Query --> Monitor : candidate IncidentSnapshots
+loop each candidate independently
+  Monitor -> Evaluator : evaluate(snapshot, now)
+  Evaluator --> Monitor : warning/breach decisions
+  alt warning decision
+    Monitor -> Command : markSlaWarning(incidentId, kind)
+    Command -> Incident : validate status/ack/pause + record once
+    Incident -> Events : SlaWarningRaised(dueAt)
+  else breach decision
+    Monitor -> Command : markSlaBreached(incidentId, kind)
+    Command -> Incident : validate status/ack/pause + record once
+    Incident -> Events : SlaBreached(dueAt)
+  end
+end
+Events -> Consumers : publish one committed event
+Consumers -> Consumers : audit + notify configured recipients
+note over Monitor,Consumers
+Deferred target sequence. The standalone evaluator exists,
+but live M3 monitor-to-command-port wiring was not completed
+in the submitted scope. M3 must not publish the same events
+directly once this command-port flow is enabled.
+end note
+@enduml

@@ -1,0 +1,38 @@
+@startuml
+skinparam sequenceMessageAlign center
+actor "Technician / Team Lead / Admin / IT Manager" as User
+participant "RcaController" as Controller
+participant "CoverageSpecificityRanker" as Ranker
+participant "ImpactTopology / Graph Adapter" as Topology
+participant "CandidateGenerator" as Candidates
+participant "CatalogQuery" as Catalog
+participant "EvidenceCollector" as Evidence
+participant "ChangeHistory Adapter" as Changes
+participant "IncidentOpenLookup Adapter" as OpenIncidents
+participant "IncidentQueryPort" as IncidentQuery
+participant "EvidenceAggregator" as Aggregator
+participant "RcaScorer" as Scorer
+
+User -> Controller : POST /api/v1/rca/rank\n{ affectedServiceIds }
+Controller -> Ranker : assess(affectedServiceIds)
+Ranker -> Topology : snapshot()
+Topology --> Ranker : immutable graph snapshot
+Ranker -> Candidates : generate(affected set, graph)
+Candidates --> Ranker : affected services + dependency candidates
+Ranker -> Catalog : services() / service labels
+Catalog --> Ranker : service names and metadata
+Ranker -> Evidence : collect(candidate IDs, now)
+Evidence -> Changes : recent changes in evidence window
+Changes --> Evidence : service change evidence
+Evidence -> OpenIncidents : open incident services
+OpenIncidents -> IncidentQuery : openSince(Instant.EPOCH)
+IncidentQuery --> OpenIncidents : incident snapshots
+OpenIncidents --> Evidence : open incident evidence by service
+Evidence --> Ranker : typed evidence by candidate
+Ranker -> Aggregator : aggregate evidence per candidate
+Aggregator --> Ranker : bounded, deterministic bonuses and reasons
+Ranker -> Scorer : score, sort, detect ambiguity
+Scorer --> Ranker : ranked candidates + ambiguity
+Ranker --> Controller : RcaAssessment
+Controller --> User : 200 candidates, top, runner-up, ambiguous
+@enduml
