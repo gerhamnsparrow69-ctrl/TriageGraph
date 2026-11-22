@@ -2,11 +2,13 @@ import type { RouteObject } from 'react-router'
 import { assignmentTechnicianRoutes } from '../features/assignment/routes'
 import { auditAdminRoutes } from '../features/audit/routes'
 import { authRoutes } from '../features/auth/routes'
+import { catalogAdminRoutes } from '../features/catalog/routes'
 import { incidentRoutes } from '../features/incident/routes'
 import { notificationRoutes } from '../features/notifications/routes'
 import { reportsAdminRoutes } from '../features/reports/routes'
 import { searchAdminRoutes, searchTechnicianRoutes } from '../features/search/routes'
 import { settingsAdminRoutes } from '../features/settings/routes'
+import { topologyAdminRoutes, topologyTechnicianRoutes } from '../features/topology/routes'
 import { triageEmployeeRoutes, triageTechnicianRoutes } from '../features/triage/routes'
 import { usersAdminRoutes } from '../features/users/routes'
 
@@ -35,6 +37,7 @@ export const technicianRoutes: RouteObject[] = [
   ...triageTechnicianRoutes,
   ...assignmentTechnicianRoutes,
   ...searchTechnicianRoutes,
+  ...topologyTechnicianRoutes,
 ]
 
 /** Pages inside the indigo admin layout, under /admin. */
@@ -46,4 +49,6 @@ export const adminRoutes: RouteObject[] = [
   ...settingsAdminRoutes,
   ...searchAdminRoutes,
   ...reportsAdminRoutes,
+  ...catalogAdminRoutes,
+  ...topologyAdminRoutes,
 ]
