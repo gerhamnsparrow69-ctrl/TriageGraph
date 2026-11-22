@@ -3,7 +3,7 @@ import { ApiError } from '../../api/client'
 import { useToast } from '../../app/ui/Toasts'
 import { useIncidentAction } from './api'
 import { formatIst } from './format'
-import type { IncidentView } from './types'
+import type { IncidentNote, IncidentView } from './types'
 
 /** Comments and work notes. Internal notes are staff-only; the backend already hides them from employees. */
 export function NotesPanel({ incident, isStaff }: { incident: IncidentView; isStaff: boolean }) {
@@ -31,7 +31,7 @@ export function NotesPanel({ incident, isStaff }: { incident: IncidentView; isSt
           <li key={n.id} className={`rounded-lg p-3 text-sm ${n.internal ? 'bg-amber-50 ring-1 ring-amber-200' : 'bg-slate-50'}`}>
             <div className="flex justify-between gap-2 text-xs text-slate-500 mb-1">
               <span>
-                {n.authorId === incident.reporterId ? 'Reporter' : n.authorId === incident.assigneeId ? 'Assigned technician' : `User #${n.authorId ?? 'system'}`}
+                {noteAuthor(n, incident)}
                 {n.internal && <span className="ml-2 font-semibold text-amber-700">Internal</span>}
               </span>
               <time dateTime={n.createdAt}>{formatIst(n.createdAt)}</time>
@@ -61,4 +61,13 @@ export function NotesPanel({ incident, isStaff }: { incident: IncidentView; isSt
       )}
     </section>
   )
+}
+
+/** "Sneha Rao (assigned technician)"; falls back to the role on the incident, never a raw user id. */
+function noteAuthor(n: IncidentNote, incident: IncidentView): string {
+  if (n.authorId == null) return 'System'
+  const role = n.authorId === incident.reporterId ? 'reporter'
+    : n.authorId === incident.assigneeId ? 'assigned technician' : null
+  if (n.authorName) return role ? `${n.authorName} (${role})` : n.authorName
+  return role ? role.charAt(0).toUpperCase() + role.slice(1) : 'IT staff'
 }

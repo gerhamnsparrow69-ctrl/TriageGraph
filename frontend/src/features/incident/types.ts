@@ -14,6 +14,8 @@ export interface IncidentNote {
   id: number
   text: string
   authorId: number | null
+  /** Display name resolved by the server; null for system notes or an unknown user. */
+  authorName: string | null
   internal: boolean
   createdAt: string
 }
@@ -35,7 +37,9 @@ export interface IncidentView {
   classificationSource: string | null
   classificationConfidence: number | null
   reporterId: number
+  reporterName: string | null
   assigneeId: number | null
+  assigneeName: string | null
   assignmentStrategy: string | null
   awaitingAssignmentReason: string | null
   sla: {

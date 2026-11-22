@@ -7,6 +7,8 @@ export interface AuditEntry {
   occurredAt: string
   actorId: number | null
   actorRole: string | null
+  /** Display name resolved by the server; null for system entries or an unknown user. */
+  actorName: string | null
   action: string
   incidentId: number | null
   incidentCode: string | null
