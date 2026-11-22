@@ -8,6 +8,7 @@ import { notificationRoutes } from '../features/notifications/routes'
 import { reportsAdminRoutes } from '../features/reports/routes'
 import { searchAdminRoutes, searchTechnicianRoutes } from '../features/search/routes'
 import { settingsAdminRoutes } from '../features/settings/routes'
+import { slaAdminRoutes } from '../features/sla/routes'
 import { topologyAdminRoutes, topologyTechnicianRoutes } from '../features/topology/routes'
 import { triageEmployeeRoutes, triageTechnicianRoutes } from '../features/triage/routes'
 import { usersAdminRoutes } from '../features/users/routes'
@@ -51,4 +52,5 @@ export const adminRoutes: RouteObject[] = [
   ...reportsAdminRoutes,
   ...catalogAdminRoutes,
   ...topologyAdminRoutes,
+  ...slaAdminRoutes,
 ]
