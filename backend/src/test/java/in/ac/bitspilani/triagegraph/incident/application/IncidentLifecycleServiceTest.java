@@ -260,4 +260,29 @@ class IncidentLifecycleServiceTest {
     void theSystemCannotReport() {
         assertThatThrownBy(() -> service.report(PAYMENT_DOWN, Actor.system())).isInstanceOf(InvalidInputException.class);
     }
+
+    @Test
+    void theViewCarriesDisplayNamesForReporterAssigneeAndNoteAuthors() {
+        IncidentView reported = service.report(PAYMENT_DOWN, DEV_ACTOR);
+        assertThat(reported.reporterName()).isEqualTo("Dev");
+        assertThat(reported.assigneeName()).isEqualTo("Sneha");
+
+        IncidentView view = service.addNote(reported.id(), "Seeing it on Chrome too", false, DEV_ACTOR);
+        assertThat(view.notes()).last().satisfies(n -> {
+            assertThat(n.authorId()).isEqualTo(DEV);
+            assertThat(n.authorName()).isEqualTo("Dev");
+        });
+    }
+
+    @Test
+    void anUnknownUserFallsBackToNoNameInsteadOfFailing() {
+        IncidentView reported = service.report(PAYMENT_DOWN, DEV_ACTOR);
+        when(users.user(SNEHA)).thenThrow(new in.ac.bitspilani.triagegraph.shared.exception.UserNotFoundException("gone"));
+
+        IncidentView view = service.get(reported.id(), DEV_ACTOR);
+
+        assertThat(view.assigneeId()).isEqualTo(SNEHA);
+        assertThat(view.assigneeName()).isNull();
+        assertThat(view.reporterName()).isEqualTo("Dev");
+    }
 }

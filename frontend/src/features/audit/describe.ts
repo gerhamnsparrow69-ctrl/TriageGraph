@@ -1,9 +1,12 @@
 import type { AuditEntry } from './api'
 
-export function actorLabel(e: Pick<AuditEntry, 'actorId' | 'actorRole'>): string {
+/** "Sneha Rao · technician", or just the role when the user is unknown; never a raw user id. */
+export function actorLabel(e: Pick<AuditEntry, 'actorId' | 'actorRole' | 'actorName'>): string {
   if (e.actorId == null) return 'System'
-  const role = e.actorRole ? e.actorRole.toLowerCase().replace(/_/g, ' ') : 'user'
-  return `${role.charAt(0).toUpperCase()}${role.slice(1)} #${e.actorId}`
+  const role = e.actorRole ? e.actorRole.toLowerCase().replace(/_/g, ' ') : null
+  if (e.actorName) return role ? `${e.actorName} · ${role}` : e.actorName
+  const fallback = role ?? 'user'
+  return `${fallback.charAt(0).toUpperCase()}${fallback.slice(1)}`
 }
 
 export function transitionLabel(e: Pick<AuditEntry, 'fromState' | 'toState'>): string | null {
