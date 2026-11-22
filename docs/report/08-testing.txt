@@ -1,0 +1,180 @@
+8. TESTING
+
+The brief asks for at least 15 meaningful test cases. We planned 32, grouped as normal, boundary,
+invalid input, exception, authorisation, business-rule and architecture cases, and each one names
+the JUnit test that proves it. The full table with scenario, expected result, test name and status is
+in docs/test-cases.txt. The whole backend has 683 automated tests; all of them pass under
+./mvnw verify (0 failures, 0 errors, 22 Nov 2026).
+
+8.1 How we test
+
+  - Unit tests check one class in isolation: domain rules (state transitions, priority formula,
+    assignment strategies, duplicate score), with mocked ports where a module talks to another.
+  - Integration tests start the Spring application with an in-memory H2 database and call the REST
+    endpoints with MockMvc, so they check JSON, status codes, security and the database together.
+  - Contract tests run the same checks against every implementation of an interface. For example,
+    AssignmentStrategyContractTest runs one set of assertions against all four assignment
+    strategies, which proves the Liskov substitution principle.
+  - Architecture tests (ArchUnit) fail the build if a layer breaks a rule: the domain must not
+    depend on infrastructure or API code, controllers must not use repositories, modules must not
+    form a dependency cycle (TC32).
+  - Measured accuracy: the AI features are evaluated on labelled data, not only unit-tested (8.4).
+
+How to run: from the backend folder, ./mvnw verify runs everything. The Surefire reports are in
+backend/target/surefire-reports.
+
+8.2 Results by module
+
+  Member 1: incident, priority, audit, shared (311 tests)
+
+    Test class                                     Tests  What it proves
+    ---------------------------------------------  -----  ------------------------------------------
+    IncidentStateTransitionTest                    130    every illegal (status, action) pair is
+                                                          rejected and changes nothing; every legal
+                                                          one reaches the documented status (TC16)
+    IncidentStateRegistryTest                      12     one distinct singleton state per status,
+                                                          with the documented next statuses
+    IncidentTest                                   24     nine ordered events (TC05), check order
+                                                          409 then 403 then 400, permissions, SLA
+                                                          pause and resume, merge, feedback
+    IncidentJoinTest, IncidentSlaEscalationTest    10     joining as affected; SLA warnings,
+                                                          breaches and escalation on the incident
+    IncidentLifecycleServiceTest                   14     report() orchestration against mocked
+                                                          ports, the "nobody free" path, access,
+                                                          internal notes, display names (TC01, TC24)
+    IncidentCommandServiceSlaTest,                 8      the command and query ports; factory
+    IncidentFactoryTest, IncidentQueryServiceTest         validation and backdating
+    IncidentControllerTest                         7      over HTTP: report to ASSIGNED, full
+                                                          lifecycle, 400 / 401 / 403 / 404 / 409
+                                                          (TC01, TC13)
+    IncidentRulesAndAccessTest                     4      TC16, TC17, TC24, TC25 over HTTP
+    JpaIncidentRepositoryTest                      2      the aggregate round-trips through the
+                                                          database and rebuilds its state
+    IncidentFallbacksTest                          6      the stand-in ports behave like the real ones
+    WeightedScorePriorityCalculatorTest            35     worked examples, every band and multiplier
+                                                          boundary (TC02, TC07, TC08)
+    PriorityServiceImplTest,                       12     security floor, registry rules, admin-only
+    PriorityCalculatorRegistryTest,                       settings endpoint
+    PriorityCalculatorSettingsControllerTest
+    AuditTrailIntegrationTest                      5      nine ordered audit entries (TC05), rejected
+                                                          actions not audited (TC17), tampered row
+                                                          named (TC32), rollback leaves no entry
+    AuditHasherTest, AuditChainWriterTest,         31     hash fields and boundaries, chain linking
+    AuditServiceTest, AuditTrailListenerTest              under a transaction, verification, event to
+                                                          entry mapping, actor names
+    ArchitectureTest                               5      layering and module rules (TC32)
+    ContractsTest, GlobalExceptionHandlerTest      6      sealed contracts, error mapping to
+                                                          ProblemDetail
+
+  Member 2: triage and assignment (140 tests)
+
+    Test class                                     Tests  What it proves
+    ---------------------------------------------  -----  ------------------------------------------
+    AssignmentStrategyContractTest                 5      Liskov substitution: one contract against
+                                                          all four strategies
+    SmartScoreStrategyTest                         5      the Workflow 1 example, P1/P2 versus P3/P4
+                                                          weights, experience cap, weight validation
+    EligibilityFilterTest                          6      skill, availability and capacity rules and
+                                                          the two different exceptions (TC12)
+    RoundRobinStrategyTest                         4      rotation, previews do not move the cursor,
+                                                          per-category turns (TC04)
+    SkillBasedStrategyTest,                        6      specialist preference, load ratio,
+    LoadBalancedStrategyTest                              deterministic ties (TC03)
+    AssignmentStrategyRegistryTest                 3      lookup by key, unknown key, duplicate keys
+    AssignmentServiceImplTest                      8      strategy switched at run time changes the
+                                                          next assignment; compare tool
+    ExperienceServiceTest, WorkloadServiceTest,    9      idempotent fix ledger, queue ordering,
+    ReassignmentServiceTest                               team view, capacity override
+    DuplicateDetectorTest                          6      TC11: score exactly at and just below the
+                                                          threshold; service and recency bonuses
+    EnsembleClassifierTest                         6      Composite: trust order, agreement bonus,
+                                                          a broken member is ignored, fallback
+    KeywordRuleClassifierTest, KnnClassifierTest,  12     each classifier, PII masking, prompt
+    LlmClassifierTest                                     fencing, schema enums from the catalogue
+    ResolutionAdvisorTest                          4      historical advice; Decorator adds the AI
+                                                          draft and falls back when AI is off
+    RepeatSubmissionGuardTest                      2      TC22
+    TextProcessingTest                             5      text normalisation, PII masker, vector maths
+    GeminiLlmClientTest                            5      the real adapter against a local HTTP
+                                                          server: 429, blocked answers, bad JSON (TC19)
+    LlmDecoratorsTest                              5      LRU cache, circuit breaker, Null Object
+    JsonTest, EmbedderAndIndexTest                 6      JSON utility, fallback embedder, index search
+    TriageServiceImplTest                          10     the facade end to end: suggestion is always
+                                                          an active category, duplicates, TC19, TC22
+    KnowledgeBaseServiceTest, JoinMergeServiceTest,16     idempotent seeding, join and merge rules
+    TriageAdminServicesTest                               (TC29), "Resolved:" prefix removed, new
+                                                          keyword with zero code change
+    DuplicateEvaluationTest                        3      the 30 labelled pairs, metric maths
+    MiniLmDuplicateEvaluationTest                  2      real MiniLM: F1 at the calibrated threshold
+    TriageApiIntegrationTest                       7      the full stack: 401 / 400 / 403, settings,
+                                                          evaluation, keywords
+    AssignmentApiIntegrationTest                   5      live strategy switch, 400, 403, 409 (TC23)
+
+  Member 3: catalogue, SLA, topology, RCA, and Member 4: identity, notifications
+
+    Together these two groups account for the rest of the 683 tests (about 230). Their per-class
+    tables come from Member 3 and Member 4 (TC06, TC09, TC10, TC14, TC15, TC18, TC20, TC21, TC23,
+    TC26, TC27, TC28, TC30, TC31 and the RCA tests). [Members 3 and 4: add your table here.]
+
+8.3 The 32 planned cases
+
+See docs/test-cases.txt. In short:
+
+  - Normal: TC01 to TC06 (report to assigned, priority score, strategies, lifecycle, notification).
+  - Boundary: TC07 to TC12 (score 40.0 versus 39.9, user-count bands, 75 % SLA, deadline, duplicate
+    threshold, technician at maximum load).
+  - Invalid input: TC13 to TC15 (blank description, unknown service, weak password).
+  - Exception: TC16 to TC22 (illegal transitions, missing SLA policy, AI failure, SMTP down,
+    dependency cycle, repeated submission).
+  - Authorisation: TC23 to TC27 (employee on admin endpoints, other people's incidents, lockout,
+    expired token).
+  - Business rules: TC28 to TC31 (SLA pause, joining a duplicate, root cause ranking, escalation).
+  - Architecture: TC32 (layering rules and the tamper-evident audit chain).
+
+8.4 Measured accuracy of the AI features
+
+Measured with the all-MiniLM-L6-v2 model on the repository's own data:
+
+  Measurement                                                        Result
+  -----------------------------------------------------------------  ------------------------------
+  Duplicate detection, 30 labelled pairs, threshold 0.62             precision 0.92, recall 1.00,
+                                                                     F1 0.96 (12 found, 1 false
+                                                                     alarm, 0 missed)
+  Best F1 over thresholds 0.40 to 0.90                               0.96 for any threshold from
+                                                                     0.60 to 0.64
+  Category suggestion, leave-one-out on the 60-incident archive      kNN alone 72 %; keywords + kNN
+                                                                     ensemble 82 %
+  Service suggestion, same test                                      87 %
+  Demo pair "Fee payment app unavailable" and "Fee payment not      score 0.83, a likely duplicate
+  going through"
+  A different problem on the same service ("Fee receipt download    score 0.55, only "possibly
+  shows error 500")                                                  related"
+
+The admin Settings page shows these numbers live under "Measured accuracy", and the numbers follow the
+threshold slider.
+
+8.5 Bugs found while testing
+
+  - Priority score assertion (Member 2): two tests (IncidentControllerTest and
+    AuditTrailIntegrationTest) hard-coded the score 83.2, which assumes a service of criticality 4.
+    With the real triage the service is rated HIGH, so the score is 62.4 and the priority is still P1.
+    The tests now check that a P1 and a number are returned.
+  - Triage suggested a category that the incident module rejects (Member 2): the suggestion is now
+    always replaced by an active catalogue category (test suggestionIsAlwaysAnActiveCatalogCategory).
+  - The stored fix text began with "Resolved:" (Member 2): the knowledge base now strips the prefix
+    (test in KnowledgeBaseServiceTest).
+  - Join, merge and reassign had no implementation (Members 1 and 2): IncidentCommandService now
+    implements the shared port, with IncidentJoinTest covering joinAsAffected.
+  - TC13 (Member 1): an impact outside the enum, for example 7, is rejected with 400, but as a
+    generic "Failed to read request" ProblemDetail without fieldErrors, unlike the other validation
+    errors. The test documents the current behaviour. Mapping unreadable fields to INVALID_INPUT with
+    a field error is a small change in GlobalExceptionHandler.
+
+8.6 Known limits of the test suite
+
+  - Gemini is only tested through a local test server and the failure paths (timeouts, 429, invalid
+    JSON). We do not call the real Gemini service in tests, so no test depends on the network or an API
+    key.
+  - Notification delivery is tested through a stand-in mail sender and push gateway, not a real SMTP
+    server.
+  - The demo accounts and incidents are seeded for the video; the tests create their own data.
