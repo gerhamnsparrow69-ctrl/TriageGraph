@@ -110,11 +110,76 @@ backend/target/surefire-reports.
                                                           evaluation, keywords
     AssignmentApiIntegrationTest                   5      live strategy switch, 400, 403, 409 (TC23)
 
-  Member 3: catalogue, SLA, topology, RCA, and Member 4: identity, notifications
+  Member 3: catalogue, SLA, topology, RCA (about 122 tests)
 
-    Together these two groups account for the rest of the 683 tests (about 230). Their per-class
-    tables come from Member 3 and Member 4 (TC06, TC09, TC10, TC14, TC15, TC18, TC20, TC21, TC23,
-    TC26, TC27, TC28, TC30, TC31 and the RCA tests). [Members 3 and 4: add your table here.]
+    The per-class table comes from Member 3 (TC09, TC10, TC14, TC18, TC21, TC28, TC30, TC31 and the
+    RCA tests). [Member 3: add your table here.]
+
+  Member 4: config, identity, notification, reporting, seed (110 tests)
+
+    Test class                                     Tests  What it proves
+    ---------------------------------------------  -----  ------------------------------------------
+    SecurityConfigTest                             5      health and API docs are public; no token or
+                                                          an expired token gives 401 (TC27); a valid
+                                                          JWT is accepted; CORS allows the dev server
+    AuthControllerTest                             11     login and /me; registration validates fields,
+                                                          rejects weak passwords and duplicate emails
+                                                          (TC15); five wrong passwords lock the
+                                                          account, 423 (TC26); unknown email and wrong
+                                                          password give the same message; an employee
+                                                          gets 403 on admin endpoints (TC23)
+    UserFactoryTest                                11     the factory builds the right subclass for
+                                                          every role; passwords are hashed, never
+                                                          stored plain; weak passwords are rejected
+    UserHierarchyTest                              10     the User hierarchy: each role's permissions
+                                                          (employee sees own or joined incidents, only
+                                                          the assignee works an incident, team lead
+                                                          reassigns), lockout after the fifth failure,
+                                                          capacity and team rules
+    NotificationFlowTest                           4      a P1 assignment reaches the technician in-app,
+                                                          by email and by push (TC06); a P3 skips email;
+                                                          an SMTP outage is retried, logged FAILED and
+                                                          does not affect the incident (TC20)
+    NotificationControllerTest                     5      inbox list, unread count, mark read; only
+                                                          admins send tests and read the delivery log;
+                                                          the live stream accepts a token in the query
+                                                          string, other endpoints do not
+    RuleTableChannelSelectionPolicyTest            5      the routing table: P1 assignment also emails,
+                                                          a breach reaches the team lead on every
+                                                          channel, a new rule row is all it takes to
+                                                          route somewhere new
+    RecipientResolverTest                          5      who is told about each event (assignee,
+                                                          reporter, followers, team lead); works even
+                                                          without the incident module
+    RetryingNotificationChannelTest                3      the retry decorator: succeeds on a later
+                                                          attempt, gives up after three (TC20)
+    HttpNtfyGatewayTest                            3      the push adapter posts title, priority and
+                                                          body to the ntfy topic
+    LiveFeedTest                                   2      Command Centre feed: newest first, history
+                                                          capped
+    IncidentSearchServiceTest                      7      search criteria combine and sort; results are
+                                                          scoped by role; bad paging and dates rejected;
+                                                          export is unpaged
+    IncidentSpecificationsTest                     6      each Specification on its own and combined
+                                                          with and(): code, date range, text, role scope
+    ReportingServiceTest                           7      the six reports: overview, technician
+                                                          workload, service analysis, 14-day trend in
+                                                          campus time, SLA by priority, AI effectiveness
+    IncidentFactTest                               8      SLA status on the read side: on track, at risk
+                                                          at 75 %, breached, paused, met
+    ViewerTest                                     2      the viewer's role scope
+    CsvReportExporterTest                          3      header and one line per incident; cells that
+                                                          look like spreadsheet formulas are defused
+    ReportingApiTest                               7      search and reports over HTTP against the real
+                                                          database; reports are for managers only; CSV
+                                                          export is a download; bad input is 400
+    DemoIncidentHistorySeederTest                  3      demo history is written only into an empty
+                                                          system, only in the past
+    UserSeederTest                                 2      the Appendix A users and teams are seeded once;
+                                                          demo accounts log in with the demo password
+    TriageGraphApplicationTests                    1      the whole application context starts
+
+    The frontend passes npm run lint (0 errors) and npm run build.
 
 8.3 The 32 planned cases
 
@@ -165,6 +230,12 @@ threshold slider.
     (test in KnowledgeBaseServiceTest).
   - Join, merge and reassign had no implementation (Members 1 and 2): IncidentCommandService now
     implements the shared port, with IncidentJoinTest covering joinAsAffected.
+  - CI was red after PR #8 (Member 4): every Spring test context shared one in-memory H2 database.
+    A context started later dropped and recreated the tables, user ids were reused, and a stale
+    triage index rejected a new report as a duplicate (IncidentControllerTest, depending on test
+    order). Fixed by giving each test context its own database (jdbc:h2:mem:triagegraph-${random.uuid}).
+  - Reporting first counted merged duplicates as "SLA met" (Member 4): MERGED incidents are now left
+    out of SLA compliance (ReportingServiceTest.slaByPriority).
   - TC13 (Member 1): an impact outside the enum, for example 7, is rejected with 400, but as a
     generic "Failed to read request" ProblemDetail without fieldErrors, unlike the other validation
     errors. The test documents the current behaviour. Mapping unreadable fields to INVALID_INPUT with
