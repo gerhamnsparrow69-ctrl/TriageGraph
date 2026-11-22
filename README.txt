@@ -33,6 +33,9 @@ The demo profile also adds two weeks of finished incidents (56, all resolved or 
 the trend chart and the search page have data before anyone reports a live incident. It only runs when
 the incidents table is empty.
 
+A step-by-step demo script (report, duplicate banner, assignment, resolution assistant, settings)
+is in docs/m2/README.txt, section 3.
+
 ## Demo accounts (dev and demo profiles)
 
 Every seeded account uses the password `Demo@1234`.
@@ -70,6 +73,45 @@ retry-backoff, ntfy-base-url).
 /admin is a live view for administrators and the IT manager: headline numbers and a feed of incident
 events (reported, assigned, priority changes, SLA warnings and breaches, escalations, major incidents)
 that updates without refreshing. The last 50 events are kept so the feed isn't empty after a reload.
+
+## AI triage and assignment
+
+While an employee types a report, the text is matched against 60 past incidents with the
+all-MiniLM-L6-v2 embedding model (runs in-process; no API key needed). The page suggests a category
+and service with a confidence and a "Why this suggestion?" explanation, and warns when the same problem
+was reported recently ("Looks like INC-1057, 83% match", with "Yes, join" to follow it instead of
+opening a new ticket). On submit the incident is classified, prioritised and assigned in one step.
+
+Assignment has four interchangeable strategies (smart score, skill-based, load-balanced, round robin).
+An administrator switches between them under Settings, with no restart, and can compare what each
+would pick for an incident. Technicians get a workload page (/technician/workload), a resolution
+assistant with similar past fixes, and a knowledge base search (/technician/knowledge). Gemini drafts
+step-by-step fixes when GEMINI_API_KEY is set; without it the local models are used.
+
+Details, settings and the demo steps: docs/m2/README.txt.
+
+## Service catalogue, dependency graph and SLA
+
+- Service catalogue (/admin/catalog): the 17 campus services with their criticality, and the incident
+  categories. API: `GET /api/v1/catalog/services`, `/services/{id}`, `/categories`, `/categories/{code}`.
+- Dependency graph (/admin/topology and /technician/topology): which service depends on which,
+  drawn with Cytoscape. Pick a service to see its direct and indirect dependencies, its dependents and
+  its blast radius (how many services break if it fails). API: `GET /api/v1/topology`, and
+  `/services/{id}/dependencies`, `/dependents`, `/blast-radius`. The blast radius also feeds the
+  priority score.
+- SLA policies (/admin/sla): the response and resolution targets and the warning threshold for any
+  service and priority. API: `GET /api/v1/sla/targets?serviceId=&priority=`. Breaches by policy:
+  `GET /api/v1/admin/reports/sla-breaches` (administrators and the IT manager).
+
+## Root-cause analysis
+
+`POST /api/v1/rca/rank` with `{"affectedServiceIds": [9, 10, 11]}` ranks the services that could
+explain several failures at once. Each candidate is scored on coverage (the share of the failing
+services that depend on it) and specificity (the share of what it would break that is actually
+failing), plus a bonus for evidence such as recent change records and open incidents on it. The
+response also flags when the top candidates are too close to call. With the demo data, LMS, ERP Portal and
+Email & Collaboration point to Campus SSO first. Open to technicians, team leads, administrators and
+the IT manager.
 
 ## Search and reports
 
