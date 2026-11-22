@@ -1,0 +1,164 @@
+3. SYSTEM ARCHITECTURE
+
+3.1 Overview
+
+TriageGraph is one Spring Boot 4 application (Java 21) with a React front end. The browser talks to
+the server over HTTPS: REST and JSON under /api/v1, plus a server-sent event stream for live
+updates. Three front-end areas share one API:
+
+  - Employee Portal: report, track, answer questions, verify, give feedback.
+  - Technician Console: queue, incident workspace, notes, resolution, workload.
+  - Admin Command Centre: configuration, dependency graph, reports, audit, SLA board.
+
+The API layer is a set of controllers with request validation, the Spring Security filter chain
+(JWT, roles, CORS) and one GlobalExceptionHandler that turns every error into an RFC 9457
+ProblemDetail with an errorCode and, for validation errors, a list of field errors.
+
+Behind the API the application is a modular monolith: one deployable, one database transaction,
+one process to debug, which suits a single campus server. Strict module boundaries keep the main
+benefit people usually want from microservices: each member could build and test their module
+before the others existed. Figure 4.1 shows the modules and the ports between them.
+
+
+3.2 Modules
+
+  Module        Owner  Responsibility
+  ------------  -----  ------------------------------------------------------------------------
+  incident      M1     The Incident aggregate, its ten-state lifecycle, notes, join and merge,
+                       the incident REST API
+  priority      M1     Priority calculators (Strategy) and the guard rules after scoring
+  audit         M1     Hash-chained, append-only audit trail; timelines; chain verification
+  triage        M2     Meaning vectors, duplicate detection, category/service suggestion,
+                       suggested resolutions, knowledge base
+  assignment    M2     Four assignment strategies, eligibility rules, workload, reassignment
+  catalog       M3     IT services, categories, change records
+  topology      M3     Service dependency graph, blast radius, root-cause ranking
+  sla           M3     SLA policies, deadlines, warnings, breaches, escalation chain
+  identity      M4     Users, roles, login, JWT, account lockout
+  notification  M4     In-app, email and push channels; the event dispatcher; live feed
+  reporting     M4     KPIs, search, CSV reports
+  config        M4     Security configuration, async execution, the domain event publisher
+
+Inside every module the same four packages:
+
+  api             controllers and request/response records
+  application     use-case services: load, act, save, publish
+  domain          entities, value objects, domain interfaces, the business rules
+  infrastructure  repositories and adapters to external systems (database, ONNX model, JGraphT,
+                  Gemini, SMTP, ntfy)
+
+The repository interface lives in domain and its JPA implementation in infrastructure, so domain
+code never depends on the database (for the incident module: IncidentRepository and
+JpaIncidentRepository).
+
+
+3.3 How modules talk to each other
+
+Modules never import each other's classes. They use only the contracts in the shared package:
+
+  - Ports (shared.contracts.ports): interfaces one module provides and others use. The incident
+    module provides IncidentCommandPort (join, merge, reassign, SLA warning and breach, escalate)
+    and IncidentQueryPort (read-only IncidentSnapshot records). It uses TriageService,
+    CatalogQuery, PriorityService, SlaService, AssignmentService, BlastRadiusProvider,
+    UserDirectory and DomainEventPublisher.
+  - DTO records (shared.contracts.dto) and enums (shared.contracts.enums) that cross the
+    boundaries, for example IncidentSnapshot, PriorityInput, PriorityAssessment and SlaTargets.
+  - Domain events (shared.contracts.events), described in 3.4.
+
+The Incident aggregate stores other modules' objects by id only (reporterId, assigneeId,
+serviceId, categoryCode), never as entities. While a provider module did not exist yet, a stand-in
+in incident/infrastructure/stub (StubTriageService, FixedSlaService, StubAssignmentService,
+StubCatalogQuery) filled the gap, and it switches itself off as soon as the real bean is present.
+
+These rules are checked on every build by ArchitectureTest (ArchUnit):
+
+  - ..domain.. must not depend on ..infrastructure.. or ..api..;
+  - controllers never use repositories; they go through application services;
+  - feature modules are free of dependency cycles;
+  - only ..infrastructure.. may use LangChain4j, JGraphT or the Gemini client;
+  - incident.domain imports no other feature module;
+  - the audit repository has no update or delete methods.
+
+
+3.4 Domain events and the event rule
+
+Every change to an incident is recorded by the aggregate as a pending domain event. After the
+application service saves the incident, it pulls the events and hands them to
+DomainEventPublisher (Observer). The incident does not know who is listening.
+
+  Event                  Raised when
+  ---------------------  -------------------------------------------------------------------
+  IncidentReported       an incident is created (always in NEW)
+  IncidentStatusChanged  any status change except the move into ASSIGNED
+  PriorityAssigned       a priority is set or recalculated
+  IncidentAssigned       a technician is assigned or the incident is reassigned
+  NoteAdded              a note, question or answer is added
+  DuplicateLinked        a user joins as affected, or an incident is merged into another
+  SlaWarningRaised       the SLA monitor sees a deadline approaching
+  SlaBreached            a deadline has passed
+  IncidentEscalated      the incident is escalated to the next level
+  FeedbackSubmitted      the reporter rates a closed incident
+
+IncidentEvent is a sealed interface, so every switch over it (in the audit trail, notifications and
+the live feed) must handle every event type, or it does not compile.
+
+The event rule decides when each listener runs:
+
+  - Recording is part of the change. The audit listener (and the SLA priority-change listener) run
+    BEFORE_COMMIT, inside the same transaction, so an incident change and its audit entry are saved
+    together or not at all.
+  - Everything else is a side effect. Notifications, the live feed, triage indexing, assignment
+    bookkeeping and topology updates run AFTER_COMMIT (notifications and the live feed also @Async).
+    A failed email therefore can never roll back an incident.
+
+
+3.5 Audit trail
+
+Every domain event becomes one audit entry. Entries are never updated or deleted, and each one is
+linked to the previous one by a hash:
+
+  hash = SHA-256( prevHash | incidentId | actorId | action | fromState | toState | description |
+                  timestamp )
+
+  - Fields are joined with the ASCII unit separator (0x1F), so ("ab", "c") and ("a", "bc") can
+    never produce the same hash. The first entry links to 64 zeros (AuditHasher.GENESIS).
+  - AuditChainWriter is the only class that writes entries. It holds a fair ReentrantLock until the
+    surrounding transaction completes, so two transactions cannot both extend the same newest hash
+    and fork the chain.
+  - AuditService.verify() walks the whole chain in batches of 500 and reports the first entry that
+    fails: an edited row no longer matches its own hash, and a deleted row breaks the next row's
+    link (TC32).
+  - Each incident page shows its timeline to the people who may open that incident; the admin
+    audit page lists all entries and has a Verify button.
+  Code: audit/application/AuditTrailListener, AuditChainWriter, AuditService; audit/domain/
+  AuditHasher, AuditEntry.
+
+
+3.6 One request end to end
+
+Reporting an incident (POST /api/v1/incidents) runs IncidentLifecycleService.report() in one
+transaction:
+
+  1. Check that the reporter exists and is not sending the same report again
+     (TriageService.checkNotRepeatSubmission, 409 DUPLICATE_INCIDENT).
+  2. Use the category and service the reporter chose, or ask TriageService.classify for them.
+  3. IncidentFactory.create builds the incident with Incident.builder(); it always starts in NEW.
+  4. classify (NEW to CLASSIFIED), applyPriority with PriorityService.assess, and startSla with
+     SlaService.targetsFor.
+  5. Save, index the text for duplicate detection, then AssignmentService.autoAssign (CLASSIFIED to
+     ASSIGNED). If nobody suitable is free, flagAwaitingAssignment records why and the incident
+     stays CLASSIFIED for a team lead.
+  6. Save again, pull the events and publish them. The audit entries are written before the commit.
+
+The response is an IncidentView tailored to the caller: allowedActions lists exactly the buttons
+they may press, employees never receive internal notes, and the reporter, assignee and note-author
+names are resolved on the server, so no role needs the admin-only user endpoints.
+
+
+3.7 Limitations of the architecture
+
+  - Single server. The audit chain lock is held in memory. Several application instances would
+    need a database-level lock instead.
+  - In-process events. Events go through Spring's in-process publisher. The documented scale path
+    is a message broker (Kafka or RabbitMQ) and splitting modules into services along the
+    boundaries that already exist.

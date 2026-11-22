@@ -1,0 +1,100 @@
+@startuml m1-incident-services
+title Incident module (Member 1): services, ports and adapters around the aggregate
+skinparam classAttributeIconSize 0
+skinparam shadowing false
+skinparam class {
+  BackgroundColor #EFF6FF
+  BorderColor #2563EB
+}
+hide empty members
+
+package "incident.api" {
+  class IncidentController <<@RestController>> {
+    POST /api/v1/incidents
+    GET /{id}
+    POST /{id}/assign, /acknowledge, /start,
+    /request-info, /provide-info, /resolve,
+    /verify, /reopen, /close, /notes, /feedback
+  }
+}
+
+package "incident.application" {
+  class IncidentLifecycleService <<@Service>> <<Facade>> {
+    +report(ReportIncidentCommand, Actor): IncidentView
+    +get(id, Actor): IncidentView
+    +assign(id, technicianId, Actor): IncidentView
+    +acknowledge / startWork / verify / close (id, Actor): IncidentView
+    +requestInfo / provideInfo (id, text, Actor): IncidentView
+    +resolve(id, summary, rootCause, Actor): IncidentView
+    +reopen(id, reason, Actor): IncidentView
+    +addNote(id, text, internal, Actor): IncidentView
+    +submitFeedback(id, rating, comment, Actor): IncidentView
+  }
+  class IncidentCommandService <<@Service>> {
+    +joinAsDuplicate(incidentId, userId)
+    +merge(childId, parentId, actorId)
+    +reassign(incidentId, technicianId, reason, actorId)
+    +markSlaWarning(incidentId, SlaKind)
+    +markSlaBreached(incidentId, SlaKind)
+    +escalate(incidentId, level, targetUserId, reason)
+  }
+  class IncidentQueryService <<@Service>> {
+    +find(id): Optional<IncidentSnapshot>
+    +openSince(Instant): List<IncidentSnapshot>
+    +openWithDeadlineBefore(Instant): List<IncidentSnapshot>
+  }
+  class IncidentFactory <<Factory>> {
+    +create(ReportIncidentCommand, reporterId): Incident
+    +create(ReportIncidentCommand, reporterId, createdAt): Incident
+  }
+  class ReportIncidentCommand <<record>> {
+    title, description, impact, urgency,
+    affectedUsers, categoryCode, serviceId
+    +hasUserChoice(): boolean
+    +text(): String
+  }
+  class IncidentView <<record>> {
+    +{static} of(Incident, Actor, Function<Long,String>): IncidentView
+  }
+  class UserNames {
+    ~of(Long): String
+  }
+}
+
+package "incident.domain" {
+  class Incident <<aggregate root>>
+  interface IncidentRepository <<Repository>>
+}
+
+package "incident.infrastructure" {
+  class JpaIncidentRepository
+  interface SpringDataIncidentRepository
+}
+
+package "shared.contracts.ports" #EEF2FF {
+  interface IncidentCommandPort <<provided>>
+  interface IncidentQueryPort <<provided>>
+  interface "TriageService\nCatalogQuery\nPriorityService\nSlaService\nAssignmentService\nBlastRadiusProvider\nUserDirectory" as UsedPorts <<used>>
+  interface DomainEventPublisher <<used>>
+}
+
+IncidentController --> IncidentLifecycleService
+IncidentLifecycleService --> IncidentFactory
+IncidentLifecycleService --> IncidentRepository
+IncidentLifecycleService ..> ReportIncidentCommand
+IncidentLifecycleService ..> IncidentView
+IncidentLifecycleService ..> UserNames
+IncidentLifecycleService --> UsedPorts
+IncidentLifecycleService --> DomainEventPublisher
+IncidentFactory ..> Incident : Incident.builder()
+IncidentCommandService ..|> IncidentCommandPort
+IncidentCommandService --> IncidentLifecycleService : reassign
+IncidentCommandService --> IncidentRepository
+IncidentCommandService --> UsedPorts : catalog, priority,\nblast radius, users
+IncidentCommandService --> DomainEventPublisher
+IncidentQueryService ..|> IncidentQueryPort
+IncidentQueryService --> IncidentRepository
+IncidentRepository ..> Incident
+JpaIncidentRepository ..|> IncidentRepository
+JpaIncidentRepository --> SpringDataIncidentRepository
+@enduml
